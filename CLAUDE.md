@@ -26,7 +26,7 @@ Assessment formulas live in a configurable rules file (`estimation/data/assessme
 override with `--rules` / `DBXF_ASSESSMENT_RULES`).
 
 Placeholders: SOURCE=Databricks, TARGET=Microsoft Fabric, pkg=`dbx_premig`,
-dist=`dbx-premig`, PFX=`DBXF`, PORT=7072.
+dist=`dbx-premig`, PFX=`DBXF`, PORT=7073.
 
 ## 2. Hard constraints
 

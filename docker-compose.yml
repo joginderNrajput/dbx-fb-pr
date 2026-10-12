@@ -5,9 +5,9 @@ services:
   api:
     build: .
     ports:
-      - "${DBXF_API_PORT:-7072}:${DBXF_API_PORT:-7072}"
+      - "${DBXF_API_PORT:-7073}:${DBXF_API_PORT:-7073}"
     environment:
-      DBXF_API_PORT: "${DBXF_API_PORT:-7072}"
+      DBXF_API_PORT: "${DBXF_API_PORT:-7073}"
       DBXF_LOG_LEVEL: "INFO"
       # DBXF_API_KEY: set in .env
       # DBXF_DATABASE_URL: postgresql+psycopg://premig:premig@db:5432/premig   (local-db profile)
@@ -18,7 +18,7 @@ services:
     volumes:
       - runs:/data/runs
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${DBXF_API_PORT:-7072}/healthz || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${DBXF_API_PORT:-7073}/healthz || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

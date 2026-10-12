@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- The REST API listens on port **7073** by default (CLI `serve`, Docker image and
+  docker-compose). Override with `DBXF_API_PORT` / `serve --port`.
+
 ## [0.2.0] - 2026-10-12
 
 ### Added

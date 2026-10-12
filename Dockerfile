@@ -1,6 +1,6 @@
 # REST API image: discovery + assessment + optional Postgres sink.
 #   docker build -t dbx-premig:0.2.0 .
-#   docker run -p 7072:7072 -e DBXF_DATABASE_URL=... dbx-premig:0.2.0
+#   docker run -p 7073:7073 -e DBXF_DATABASE_URL=... dbx-premig:0.2.0
 FROM python:3.12-slim AS build
 WORKDIR /src
 COPY pyproject.toml README.md discovery.py ./
@@ -20,8 +20,8 @@ COPY --from=build /wheels /wheels
 RUN pip install --no-index --find-links /wheels "dbx-premig[api,postgres]" && rm -rf /wheels
 USER app
 WORKDIR /data
-EXPOSE 7072
+EXPOSE 7073
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD curl -fsS "http://127.0.0.1:${DBXF_API_PORT:-7072}/healthz" || exit 1
+    CMD curl -fsS "http://127.0.0.1:${DBXF_API_PORT:-7073}/healthz" || exit 1
 ENTRYPOINT ["python", "-m", "dbx_premig"]
 CMD ["serve", "--host", "0.0.0.0"]

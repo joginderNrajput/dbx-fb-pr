@@ -10,16 +10,16 @@ optionally writes the database tables (see [ASSESSMENT.md](ASSESSMENT.md)).
 pip install -e ".[api,postgres]"
 export DBXF_DATABASE_URL=postgresql+psycopg://user:password@host:5432/db   # optional
 python discovery.py db-init                                                # once, if using a DB
-python discovery.py serve --host 0.0.0.0                                   # port DBXF_API_PORT (7072)
+python discovery.py serve --host 0.0.0.0                                   # port DBXF_API_PORT (7073)
 ```
 
 Docker: `docker compose up -d --build` (add `--profile local-db` for a throwaway Postgres;
 then set `DBXF_DATABASE_URL=postgresql+psycopg://premig:premig@db:5432/premig` in `.env`).
-Interactive docs: `http://localhost:7072/docs`.
+Interactive docs: `http://localhost:7073/docs`.
 
 | Setting | Default | |
 |---|---|---|
-| `DBXF_API_PORT` / `DBXF_API_HOST` | 7072 / 127.0.0.1 | listening address |
+| `DBXF_API_PORT` / `DBXF_API_HOST` | 7073 / 127.0.0.1 | listening address |
 | `DBXF_API_KEY` | off | when set, every `/v1` call needs header `X-API-Key` |
 | `DBXF_DATABASE_URL` | off | Postgres; when set, runs persist by default |
 | `DBXF_DB_SCHEMA` | `databricks_to_fabric_premigration` | |
@@ -48,7 +48,7 @@ pair replaces its database rows.
 ### 1. Upload a discovery workbook (assessment only)
 
 ```bash
-curl -X POST http://localhost:7072/v1/assessments \
+curl -X POST http://localhost:7073/v1/assessments \
   -F organizationId=org-123 -F jobId=job-42 \
   -F file=@databricks_discovery_adb-123_20261012_1700.xlsx
 ```
@@ -59,7 +59,7 @@ Field names of Kanerika's platform are accepted as they are (`workspaceId` = wor
 `databricksCatalog`, `databricksSchema`); camelCase and snake_case both work.
 
 ```bash
-curl -X POST http://localhost:7072/v1/assessments/databricks \
+curl -X POST http://localhost:7073/v1/assessments/databricks \
   -H 'Content-Type: application/json' \
   -d '{
         "organizationId": "org-123",
@@ -81,9 +81,9 @@ run only: never stored, logged or returned.
 ### 3. Poll and download
 
 ```bash
-curl http://localhost:7072/v1/runs/<runId>
-curl -o assessment.xlsx http://localhost:7072/v1/runs/<runId>/assessment
-curl -o discovery.xlsx  http://localhost:7072/v1/runs/<runId>/discovery
+curl http://localhost:7073/v1/runs/<runId>
+curl -o assessment.xlsx http://localhost:7073/v1/runs/<runId>/assessment
+curl -o discovery.xlsx  http://localhost:7073/v1/runs/<runId>/discovery
 ```
 
 Response (abridged):

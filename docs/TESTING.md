@@ -151,10 +151,10 @@ still hold one scan for `org-1 / job-1`.
 **API** (see [API.md](API.md)):
 
 ```bash
-python discovery.py serve                          # http://127.0.0.1:7072/docs
-curl -X POST localhost:7072/v1/assessments -F organizationId=o -F jobId=j -F wait=true \
+python discovery.py serve                          # http://127.0.0.1:7073/docs
+curl -X POST localhost:7073/v1/assessments -F organizationId=o -F jobId=j -F wait=true \
      -F file=@output/databricks_discovery_<…>.xlsx
-curl -o a.xlsx localhost:7072/v1/runs/<runId>/assessment
+curl -o a.xlsx localhost:7073/v1/runs/<runId>/assessment
 ```
 
 ---

@@ -38,7 +38,7 @@ def test_no_path_from_file_outside_resources() -> None:
 def test_default_port_is_a_setting_not_a_literal() -> None:
     for path in _modules():
         if path.name != "config.py":
-            assert "7072" not in path.read_text(), path
+            assert "7073" not in path.read_text(), path
 
 
 def test_no_extractall() -> None:

@@ -12,7 +12,7 @@ from dbx_premig.errors import ConfigError
 def test_defaults() -> None:
     s = load_settings()
     assert s.collectors == ALL_COLLECTORS
-    assert s.api_port == 7072
+    assert s.api_port == 7073
     assert s.readiness_compatible_min == 80
 
 

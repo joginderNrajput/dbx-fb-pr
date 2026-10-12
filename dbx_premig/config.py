@@ -134,7 +134,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------ API
     api_host: str = "127.0.0.1"
     """Listening address of the API server."""
-    api_port: Annotated[int, Field(ge=1, le=65535)] = 7072
+    api_port: Annotated[int, Field(ge=1, le=65535)] = 7073
     """Listening port of the API server."""
     api_key: SecretStr | None = None
     """When set, every /v1 request must send it in the X-API-Key header."""
