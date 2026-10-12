@@ -1,0 +1,46 @@
+# API + (opt-in) local Postgres.
+#   docker compose up -d --build                       # API only (DB from .env)
+#   docker compose --profile local-db up -d --build    # API + throwaway Postgres
+services:
+  api:
+    build: .
+    ports:
+      - "${DBXF_API_PORT:-7072}:${DBXF_API_PORT:-7072}"
+    environment:
+      DBXF_API_PORT: "${DBXF_API_PORT:-7072}"
+      DBXF_LOG_LEVEL: "INFO"
+      # DBXF_API_KEY: set in .env
+      # DBXF_DATABASE_URL: postgresql+psycopg://premig:premig@db:5432/premig   (local-db profile)
+      # DBXF_ASSESSMENT_RULES: /config/assessment_rules.yaml
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - runs:/data/runs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${DBXF_API_PORT:-7072}/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+
+  db:
+    image: postgres:16-alpine
+    profiles: ["local-db"]
+    environment:
+      POSTGRES_USER: premig
+      POSTGRES_PASSWORD: premig
+      POSTGRES_DB: premig
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  runs:
+  pgdata:

@@ -100,6 +100,18 @@ def sheet_titles() -> dict[str, str]:
         "Totals": totals.TITLE,
     }
     titles.update({spec.name: spec.title for spec in DATA_SHEETS})
+    from dbx_premig.excel.sheets import assessment_report as ar
+
+    titles.update(
+        {
+            "Assessment": ar.DASHBOARD_TITLE,
+            "Estimation": ar.ESTIMATION.title,
+            "EffortByType": ar.EFFORT_BY_TYPE.title,
+            "Summary": ar.SUMMARY_TITLE,
+            "Rules": ar.RULES_TITLE,
+            "About": ar.ABOUT_TITLE,
+        }
+    )
     return titles
 
 

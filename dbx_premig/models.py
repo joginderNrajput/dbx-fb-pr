@@ -22,17 +22,22 @@ from dbx_premig.version import APP_VERSION
 
 __all__ = [
     "AlertRow",
+    "AssessmentResult",
     "AssetAssessment",
+    "AssetInput",
     "AssetRecord",
     "CatalogRow",
     "ClusterPolicyRow",
     "ClusterRow",
     "ColumnRow",
+    "Computation",
     "ConnectionRow",
     "DashboardRow",
     "DependencyRow",
     "DiscoveryReport",
+    "DiscoveryWorkbook",
     "Estate",
+    "EstimationRow",
     "ExperimentRow",
     "ExternalLocationRow",
     "FeatureHit",
@@ -576,3 +581,92 @@ class DiscoveryReport(_Frozen):
         if not self._by_key and self.assessments:
             self._by_key.update({a.key: a for a in self.assessments})
         return self._by_key.get(key)
+
+
+# --------------------------------------------------------------------------- assessment
+
+
+class AssetInput(_Frozen):
+    """One assessable object read back from a discovery workbook (Assets + Findings rows)."""
+
+    key: str
+    asset_type: str
+    name: str
+    location: str = ""
+    fabric_target: str = ""
+    readiness_score: int = 100
+    readiness: str = "Compatible"
+    findings: tuple[Finding, ...] = ()
+    metrics: dict[str, float] = Field(default_factory=dict)
+
+
+class DiscoveryWorkbook(_Frozen):
+    """What ``assess`` reads: the discovery workbook's rows, with every total recomputed."""
+
+    file_name: str
+    scan: ScanInfo
+    assets: tuple[AssetInput, ...]
+    counts: dict[str, float]
+
+
+class EstimationRow(_Frozen):
+    """Per-asset assessment (one row on Estimation, one row in the estimation table)."""
+
+    asset_key: str
+    asset_type: str
+    asset_name: str
+    location: str
+    fabric_target: str
+    readiness: str
+    readiness_score: int
+    total_constructs: int
+    supported: float
+    unsupported: float
+    complexity_score: int
+    complexity_level: str  # Simple | Medium | Complex
+    automation_level: str  # Fully automated | Partially automated | Manual
+    manual_dev_hours: float
+    manual_test_hours: float
+    automation_dev_hours: float
+    automation_test_hours: float
+    hours_saved: float
+
+    @property
+    def total_manual_hours(self) -> float:
+        return self.manual_dev_hours + self.manual_test_hours
+
+    @property
+    def total_automation_hours(self) -> float:
+        return self.automation_dev_hours + self.automation_test_hours
+
+
+class Computation(_Frozen):
+    """Portfolio roll-up (one row in the computation table). Sums of rounded asset figures."""
+
+    assessment_generated_at: str
+    total_assets: int
+    total_constructs: int
+    supported_constructs: float
+    unsupported_constructs: float
+    simple_count: int
+    medium_count: int
+    complex_count: int
+    fully_automated: int
+    partially_automated: int
+    manual: int
+    manual_dev_hours: float
+    manual_test_hours: float
+    total_manual_hours: float
+    automation_dev_hours: float
+    automation_test_hours: float
+    total_automation_hours: float
+    hours_saved: float
+    saving_pct: float  # fraction 0-1
+    rules_version: str
+
+
+class AssessmentResult(_Frozen):
+    tool_version: str = APP_VERSION
+    discovery: DiscoveryWorkbook
+    estimations: tuple[EstimationRow, ...]
+    computation: Computation

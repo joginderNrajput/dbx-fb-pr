@@ -16,7 +16,7 @@ import typer
 from pydantic import SecretStr
 
 from dbx_premig.config import ALL_COLLECTORS, Settings, load_settings
-from dbx_premig.errors import DiscoveryError
+from dbx_premig.errors import ConfigError, DatabaseError, DiscoveryError
 from dbx_premig.logging import configure_logging, stderr_console
 from dbx_premig.version import APP_NAME, APP_VERSION, DIST_NAME
 
@@ -202,6 +202,193 @@ def execute(
         status.update("Writing the workbook ...")
     stderr_console.print(f"[green]Workbook written:[/] {result.workbook}")
     return result
+
+
+def print_assessment(run: Any) -> None:
+    c = run.result.computation
+    stderr_console.print(
+        f"[bold]{c.total_assets}[/] assets  ·  {c.simple_count} simple / {c.medium_count} "
+        f"medium / {c.complex_count} complex  ·  {c.fully_automated} fully / "
+        f"{c.partially_automated} partially automated / {c.manual} manual  ·  "
+        f"{c.total_manual_hours:,.1f} h manual -> {c.total_automation_hours:,.1f} h with "
+        f"automation ({c.saving_pct:.0%} saved)"
+    )
+    stderr_console.print(f"[green]Assessment written:[/] {run.workbook}")
+
+
+def _persist(run: Any, settings: Settings, org: str | None, job: str | None) -> None:
+    try:
+        from dbx_premig.db.persist import persist_assessment
+    except ImportError:
+        raise DatabaseError(
+            "This build has no database support: use the Docker image or "
+            "pip install 'dbx-premig[postgres]'."
+        ) from None
+
+    if not org or not job:
+        raise ConfigError("--persist needs --org (organization id) and --job (job id).")
+    outcome = persist_assessment(run.result, settings, organization_id=org, job_id=job)
+    stderr_console.print(
+        f"[green]Saved to {outcome.target}[/] as scan {outcome.scan_id} "
+        f"({', '.join(f'{k} {v}' for k, v in outcome.rows.items())}"
+        f"{'; replaced the previous run' if outcome.replaced_scans else ''})."
+    )
+
+
+@app.command()
+def assess(
+    input_path: Annotated[
+        Path, typer.Option("--input", "-i", help="Discovery workbook (.xlsx) to assess.")
+    ],
+    rules: Annotated[
+        Path | None,
+        typer.Option(help="Assessment rules file (default: bundled assessment_rules.yaml)."),
+    ] = None,
+    out: Annotated[Path, typer.Option("--out", "-o", help="Output folder.")] = Path("output"),
+    name: Annotated[str | None, typer.Option(help="Workbook file name.")] = None,
+    persist: Annotated[
+        bool, typer.Option("--persist", help="Also save to Postgres (DBXF_DATABASE_URL).")
+    ] = False,
+    org: Annotated[
+        str | None, typer.Option("--org", help="Organization id (with --persist).")
+    ] = None,
+    job: Annotated[str | None, typer.Option("--job", help="Job id (with --persist).")] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Assess a discovery workbook: complexity, automation, hours -> assessment workbook."""
+
+    def run() -> None:
+        from dbx_premig.service import run_assessment
+
+        settings = load_settings(config, assessment_rules=rules)
+        configure_logging(settings.log_level, verbose)
+        if persist and settings.database_url is None:
+            raise ConfigError("--persist needs DBXF_DATABASE_URL.")
+        result = run_assessment(
+            settings, discovery_workbook=input_path, output_dir=out, output_name=name
+        )
+        print_assessment(result)
+        if persist:
+            _persist(result, settings, org, job)
+        typer.echo(str(result.workbook))
+
+    _handle(verbose, run)
+
+
+@app.command()
+def analyze(
+    input_path: Annotated[
+        Path | None,
+        typer.Option("--input", "-i", help="Offline export / snapshot; omit for a live scan."),
+    ] = None,
+    host: Annotated[str | None, typer.Option(help="Workspace URL (or DATABRICKS_HOST).")] = None,
+    token: Annotated[str | None, typer.Option(help="Personal access token.")] = None,
+    client_id: Annotated[str | None, typer.Option(help="Service principal client id.")] = None,
+    client_secret: Annotated[str | None, typer.Option(help="Service principal secret.")] = None,
+    profile: Annotated[str | None, typer.Option(help="Profile in ~/.databrickscfg.")] = None,
+    catalogs: Annotated[str | None, typer.Option(help="Comma list of catalogs.")] = None,
+    schemas: Annotated[str | None, typer.Option(help="Comma list of schemas.")] = None,
+    rules: Annotated[Path | None, typer.Option(help="Assessment rules file.")] = None,
+    out: Annotated[Path, typer.Option("--out", "-o", help="Output folder.")] = Path("output"),
+    save_snapshot: Annotated[bool, typer.Option("--save-snapshot")] = False,
+    persist: Annotated[bool, typer.Option("--persist", help="Also save to Postgres.")] = False,
+    org: Annotated[str | None, typer.Option("--org", help="Organization id.")] = None,
+    job: Annotated[str | None, typer.Option("--job", help="Job id.")] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Discovery then assessment in one go: writes both workbooks (= assess(discover))."""
+
+    def run() -> None:
+        from dbx_premig.service import run_assessment
+
+        settings = load_settings(
+            config,
+            host=host,
+            token=SecretStr(token) if token else None,
+            client_id=client_id,
+            client_secret=SecretStr(client_secret) if client_secret else None,
+            profile=profile,
+            catalogs=_split(catalogs),
+            schemas=_split(schemas),
+            assessment_rules=rules,
+        )
+        configure_logging(settings.log_level, verbose)
+        if persist and settings.database_url is None:
+            raise ConfigError("--persist needs DBXF_DATABASE_URL.")
+        discovery = execute(settings, input_path, out, None, save_snapshot)
+        print_summary(discovery)
+        result = run_assessment(settings, discovery_workbook=discovery.workbook, output_dir=out)
+        print_assessment(result)
+        if persist:
+            _persist(result, settings, org, job)
+        typer.echo(str(discovery.workbook))
+        typer.echo(str(result.workbook))
+
+    _handle(verbose, run)
+
+
+@app.command("rules-check")
+def rules_check(
+    rules: Annotated[Path | None, typer.Option(help="Rules file (default: bundled).")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Validate an assessment rules file without running an assessment."""
+
+    def run() -> None:
+        from dbx_premig.estimation.rules import load_rules
+
+        loaded = load_rules(rules)
+        typer.echo(f"OK: {loaded.label}, {len(loaded.base_hours)} hour tables")
+
+    _handle(verbose, run)
+
+
+@app.command("db-init")
+def db_init(
+    print_sql: Annotated[
+        bool, typer.Option("--print-sql", help="Print the DDL instead of running it.")
+    ] = False,
+    config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Create the Postgres schema and tables (DBXF_DATABASE_URL, DBXF_DB_SCHEMA)."""
+
+    def run() -> None:
+        from dbx_premig.db.engine import create_schema, ddl_sql
+
+        settings = load_settings(config)
+        if print_sql:
+            typer.echo(ddl_sql(settings.db_schema), nl=False)
+            return
+        target = create_schema(settings)
+        stderr_console.print(f"[green]Tables ready[/] in schema {settings.db_schema} on {target}.")
+
+    _handle(verbose, run)
+
+
+@app.command()
+def serve(
+    host: Annotated[str | None, typer.Option(help="Listening address (DBXF_API_HOST).")] = None,
+    port: Annotated[int | None, typer.Option(help="Listening port (DBXF_API_PORT).")] = None,
+    config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+) -> None:
+    """Run the REST API (needs the 'api' extra)."""
+
+    def run() -> None:
+        try:
+            import uvicorn
+        except ImportError:
+            raise ConfigError("The API is not installed: pip install 'dbx-premig[api]'.") from None
+        from dbx_premig.api.app import create_app
+
+        settings = load_settings(config, api_host=host, api_port=port)
+        configure_logging(settings.log_level, verbose)
+        uvicorn.run(create_app(settings), host=settings.api_host, port=settings.api_port)
+
+    _handle(verbose, run)
 
 
 @app.command()

@@ -1,0 +1,119 @@
+# Assessment rules: how complexity, automation and effort are computed.
+#
+# This file is configuration. Copy it, edit it, and pass it with
+#     python discovery.py assess --rules my_rules.yaml ...
+# or set DBXF_ASSESSMENT_RULES=/path/my_rules.yaml (the API reads the same setting).
+# `python discovery.py rules-check --rules my_rules.yaml` validates a file without running.
+#
+# Expressions use a small safe language (see dbx_premig/estimation/formula.py):
+# numbers, "strings", true/false, + - * / // % **, comparisons, and/or/not,
+# `a if cond else b`, and min max round abs ceil floor sqrt log. Division by zero gives 0.
+#
+# Variables available for every asset (read back from the discovery workbook):
+#   asset_type, name, readiness ("Compatible" | "Partial" | "Manual" | "Unsupported"),
+#   readiness_score (0-100), findings (distinct features), occurrences (sum of occurrences),
+#   penalty_total (sum of catalog penalties x occurrences), manual_findings,
+#   unsupported_findings, total_constructs, supported_constructs, unsupported_constructs,
+#   unsupported_ratio (unsupported / total, 0-1),
+#   size metrics (0 when not applicable): lines, cells, notebook_calls, sql_statements,
+#   magic_commands, size_bytes (notebooks), tasks (jobs), columns (tables / views),
+#   definition_chars (views, functions), libraries (DLT pipelines)
+# Later stages also see the results of earlier ones: size_points, score, level,
+# automation_level, base_hours, size_hours, dev_factor, test_factor, manual_dev_hours,
+# manual_test_hours.
+version: 1
+
+# ---------------------------------------------------------------- constructs
+# Every asset counts as `base_constructs` supported constructs, plus one construct per
+# distinct finding weighted by the catalog verdict below. supported + unsupported = total.
+base_constructs: 1
+support_weights:
+  supported: 1.0
+  partial: 0.5
+  manual: 0.0
+  unsupported: 0.0
+  unknown: 0.5
+
+# ---------------------------------------------------------------- complexity
+complexity:
+  # Size points per asset type ("default" for any type not listed).
+  size_points:
+    default: "0"
+    Notebook: "lines / 40 + cells / 4 + notebook_calls * 2 + magic_commands"
+    Job: "tasks * 3"
+    DLT Pipeline: "10 + libraries * 3"
+    Table: "columns / 20"
+    View: "definition_chars / 400"
+    Materialized View: "definition_chars / 300"
+    SQL Query: "lines / 10"
+    Function: "definition_chars / 200"
+  # The complexity score (0-100) of an asset.
+  score: "min(100, round(penalty_total + size_points))"
+  # First match wins. Exactly these three levels, in this order.
+  levels:
+    - level: Simple
+      when: "score < 20"
+    - level: Medium
+      when: "score < 50"
+    - level: Complex
+      when: "true"
+
+# ---------------------------------------------------------------- automation
+# How much of the migration the Kanerika accelerator automates. First match wins; exactly
+# these three levels.
+automation:
+  - level: Manual
+    when: "readiness == 'Unsupported' or readiness == 'Manual'"
+  - level: Fully automated
+    when: "readiness == 'Compatible' and manual_findings == 0 and unsupported_findings == 0"
+  - level: Partially automated
+    when: "true"
+
+# ---------------------------------------------------------------- effort (hours)
+effort:
+  # Manual development hours by asset type and complexity level ("default" for the rest).
+  base_hours:
+    default:            { Simple: 1,    Medium: 3,   Complex: 8 }
+    Notebook:           { Simple: 2,    Medium: 6,   Complex: 16 }
+    Job:                { Simple: 1,    Medium: 3,   Complex: 8 }
+    DLT Pipeline:       { Simple: 8,    Medium: 16,  Complex: 32 }
+    Cluster:            { Simple: 0.5,  Medium: 1,   Complex: 2 }
+    SQL Warehouse:      { Simple: 1,    Medium: 2,   Complex: 4 }
+    Table:              { Simple: 0.25, Medium: 0.5, Complex: 1 }
+    View:               { Simple: 0.5,  Medium: 1,   Complex: 2 }
+    Materialized View:  { Simple: 2,    Medium: 4,   Complex: 8 }
+    Streaming Table:    { Simple: 4,    Medium: 8,   Complex: 16 }
+    Volume:             { Simple: 0.25, Medium: 0.5, Complex: 1 }
+    External Location:  { Simple: 0.5,  Medium: 1,   Complex: 2 }
+    Storage Credential: { Simple: 1,    Medium: 1,   Complex: 2 }
+    Connection:         { Simple: 1,    Medium: 2,   Complex: 4 }
+    Function:           { Simple: 1,    Medium: 2,   Complex: 4 }
+    SQL Query:          { Simple: 0.5,  Medium: 1,   Complex: 3 }
+    Dashboard:          { Simple: 4,    Medium: 8,   Complex: 16 }
+    Alert:              { Simple: 1,    Medium: 2,   Complex: 4 }
+    ML Model:           { Simple: 2,    Medium: 4,   Complex: 8 }
+    Serving Endpoint:   { Simple: 8,    Medium: 16,  Complex: 24 }
+    Library:            { Simple: 0.25, Medium: 0.5, Complex: 1 }
+    Secret Scope:       { Simple: 0.5,  Medium: 1,   Complex: 2 }
+    DBFS Mount:         { Simple: 0.5,  Medium: 1,   Complex: 2 }
+    Repo:               { Simple: 0.25, Medium: 0.5, Complex: 1 }
+  # Extra hours from size, by asset type ("default" for the rest).
+  size_hours:
+    default: "0"
+    Notebook: "lines / 500"
+    Job: "tasks * 0.25"
+    SQL Query: "lines / 200"
+  # Share of the manual effort still needed with the accelerator, per automation level.
+  automation_factors:
+    Fully automated:     { dev: 0.2,  test: 0.5 }
+    Partially automated: { dev: 0.55, test: 0.75 }
+    Manual:              { dev: 1.0,  test: 1.0 }
+  # The four hour figures of every asset.
+  manual_dev_hours: "base_hours + size_hours"
+  manual_test_hours: "manual_dev_hours * 0.35"
+  automation_dev_hours: "manual_dev_hours * dev_factor"
+  automation_test_hours: "manual_test_hours * test_factor"
+
+# Hours are rounded half-up to this many places per asset; portfolio totals are sums of the
+# rounded per-asset figures (so a reviewer with a calculator gets the same answer).
+hours_decimal_places: 2

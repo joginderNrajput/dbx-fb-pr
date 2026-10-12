@@ -1,0 +1,14 @@
+.git
+.venv
+build
+dist
+output
+api_runs
+tests
+docs
+packaging
+scripts
+*.xlsx
+*.zip
+*.dbc
+.env

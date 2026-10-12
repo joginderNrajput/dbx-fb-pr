@@ -5,7 +5,9 @@
 # Entry point is the root discovery.py. Every data file read through dbx_premig/resources.py
 # must be listed in `datas`; a missing entry is the classic failure (the binary starts, then
 # dies on its first discovery). build.sh / build.ps1 smoke-test the built binary to catch it.
-# UPX is off (antivirus false positives, slower start-up). db/ and api/ are excluded.
+# UPX is off (antivirus false positives, slower start-up). db/ and api/ are excluded: the
+# executable discovers and assesses; the REST API and the Postgres sink run from the Docker
+# image / a pip install with the api and postgres extras.
 import sys
 from pathlib import Path
 
@@ -19,6 +21,7 @@ PKG = ROOT / "dbx_premig"
 datas = [
     (str(PKG / "catalog" / "data"), "dbx_premig/catalog/data"),
     (str(PKG / "excel" / "assets"), "dbx_premig/excel/assets"),
+    (str(PKG / "estimation" / "data"), "dbx_premig/estimation/data"),
 ]
 hiddenimports = [
     m for m in collect_submodules("dbx_premig")
@@ -33,7 +36,8 @@ a = Analysis(
     datas=datas,
     hiddenimports=hiddenimports,
     excludes=["dbx_premig.db", "dbx_premig.api", "tkinter", "pytest", "IPython", "numpy",
-              "pandas", "matplotlib", "cairosvg"],
+              "pandas", "matplotlib", "cairosvg", "sqlalchemy", "psycopg", "fastapi",
+              "uvicorn", "starlette"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)

@@ -58,7 +58,6 @@ from dbx_premig.excel.sheets.data import (
 from dbx_premig.excel.sheets.orchestration import DLT_PIPELINES, JOB_TASKS, JOBS
 from dbx_premig.excel.sheets.platform import IDENTITIES, MOUNTS, SECRET_SCOPES
 from dbx_premig.excel.types import Column, SheetSpec, Value
-from dbx_premig.models import DiscoveryReport
 
 __all__ = [
     "CHART_SHEETS",
@@ -140,7 +139,7 @@ def column_letter(spec: SheetSpec, header: str) -> str:
     raise KeyError(f"{spec.name} has no column {header!r}")
 
 
-def _cell_value(col: Column, row: Any, report: DiscoveryReport) -> Value:
+def _cell_value(col: Column, row: Any, report: Any) -> Value:
     if callable(col.value):
         return col.value(row, report)
     if not col.value:
@@ -155,13 +154,13 @@ def _clean_text(text: str, limit: int) -> str:
 
 
 def write_data_sheet(
-    ws: Worksheet, spec: SheetSpec, report: DiscoveryReport, settings: Settings
+    ws: Worksheet, spec: SheetSpec, report: Any, settings: Settings, home: str = "Discovery"
 ) -> int:
     """Render one data sheet. Returns the number of data rows written."""
     columns = list(spec.columns)
     set_widths(ws, [c.width for c in columns])
     branding_band(ws, spec.title, len(columns))
-    back_link(ws, spec.description)
+    back_link(ws, spec.description, home)
     ws.row_dimensions[HEADER_ROW].height = 30
 
     for i, col in enumerate(columns, start=1):
@@ -221,9 +220,9 @@ def write_data_sheet(
     return len(rows)
 
 
-def order_sheets(wb: Workbook) -> None:
-    """Put the sheets in SHEET_ORDER (anything unexpected goes last)."""
-    rank = {name: i for i, name in enumerate(SHEET_ORDER)}
+def order_sheets(wb: Workbook, order: Sequence[str] = SHEET_ORDER) -> None:
+    """Put the sheets in ``order`` (anything unexpected goes last)."""
+    rank = {name: i for i, name in enumerate(order)}
     wb._sheets.sort(key=lambda ws: rank.get(ws.title, len(rank)))
 
 

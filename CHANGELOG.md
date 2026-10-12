@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-10-12
+
+### Added
+- Assessment flow built on the discovery workbook: `assess`, `analyze` (= assess(discover)),
+  `rules-check`. Per object: constructs (supported / unsupported), complexity score and level
+  (Simple / Medium / Complex), automation level (Fully / Partially automated / Manual),
+  manual and automation development / testing hours, hours saved; portfolio computation.
+- Configurable rules file (`estimation/data/assessment_rules.yaml`) with a sandboxed
+  expression language; `--rules` / `DBXF_ASSESSMENT_RULES`.
+- Discovery-workbook reader (counts recomputed from rows; `Asset key` column added to
+  Assets and Findings).
+- Branded assessment workbook (Assessment, Estimation, EffortByType, Summary, Rules, About).
+- Optional Postgres sink: `totals`, `inventory`, `finding`, `estimation`, `computation`
+  with `organization_id` / `job_id`; replace-on-repost; `db-init`, migration SQL.
+- FastAPI service: workbook upload or Databricks credentials (JSON or multipart, PAT or
+  OAuth), background runs, downloads, API key, CORS; Dockerfile and docker-compose.
+- `--schemas` filter for Unity Catalog collection.
+
+### Changed
+- The rules-language `round()` and all score rounding are half-up.
+
 ## [0.1.0] - 2026-10-12
 
 ### Added

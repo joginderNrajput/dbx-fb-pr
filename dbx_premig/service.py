@@ -5,7 +5,11 @@
     build_report(snapshot, settings) -> DiscoveryReport  (parse + readiness; offline, pure)
     run_discovery(...)               -> DiscoveryResult   (all of the above + files written)
 
-``assess`` / ``analyze`` (hours, plan) are later prompts: see estimation/effort.py.
+    run_assessment(workbook, settings)  -> AssessmentRun  (discovery .xlsx -> assessment .xlsx)
+    run_analysis(...)                    -> discovery + assessment in one call
+
+``analyze`` IS ``assess(discover(...))``: it writes the discovery workbook and assesses that
+file, so the one-shot and the two-step routes cannot give different numbers.
 """
 
 from __future__ import annotations
@@ -17,23 +21,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dbx_premig.catalog.loader import Catalog, load_catalog
-from dbx_premig.client import DatabricksClient, resolve_credentials
+from dbx_premig.client import Credentials, DatabricksClient, resolve_credentials
 from dbx_premig.collector import ProgressFn, collect_workspace
 from dbx_premig.config import Settings
 from dbx_premig.errors import NothingFoundError
 from dbx_premig.estimation import assess_assets
 from dbx_premig.excel.discovery_writer import write_discovery_workbook
 from dbx_premig.logging import get_logger
-from dbx_premig.models import DiscoveryReport, RawSnapshot, ScanInfo
+from dbx_premig.models import AssessmentResult, DiscoveryReport, RawSnapshot, ScanInfo
 from dbx_premig.offline import snapshot_from_path
 from dbx_premig.parser import ParserRules, parse_snapshot
 
 __all__ = [
+    "AssessmentRun",
     "DiscoveryResult",
     "build_report",
     "discover_live",
     "discover_offline",
     "parser_rules",
+    "run_analysis",
+    "run_assessment",
     "run_discovery",
     "save_snapshot",
 ]
@@ -57,9 +64,13 @@ def parser_rules(catalog: Catalog, settings: Settings) -> ParserRules:
     )
 
 
-def discover_live(settings: Settings, progress: ProgressFn | None = None) -> RawSnapshot:
-    """Read the workspace named by the settings / environment / ~/.databrickscfg."""
-    creds = resolve_credentials(settings)
+def discover_live(
+    settings: Settings,
+    progress: ProgressFn | None = None,
+    credentials: Credentials | None = None,
+) -> RawSnapshot:
+    """Read the workspace named by ``credentials`` or the settings / environment / profile."""
+    creds = credentials or resolve_credentials(settings)
     log.info("connecting to %s (%s, from %s)", creds.host, creds.auth_kind, creds.source)
     client = DatabricksClient(creds, settings)
     snapshot = collect_workspace(client, settings, progress)
@@ -118,10 +129,13 @@ def run_discovery(
     output_name: str | None = None,
     keep_snapshot: bool = False,
     progress: ProgressFn | None = None,
+    credentials: Credentials | None = None,
 ) -> DiscoveryResult:
     """One call for every surface: collect (live or offline), classify, write the files."""
     snapshot = (
-        discover_offline(input_path, settings) if input_path else discover_live(settings, progress)
+        discover_offline(input_path, settings)
+        if input_path
+        else discover_live(settings, progress, credentials)
     )
     report = build_report(snapshot, settings)
     if not report.assessments and not report.estate.catalogs and not report.estate.identities:
@@ -138,3 +152,68 @@ def run_discovery(
     if keep_snapshot and snapshot.mode == "live":
         snap_path = save_snapshot(snapshot, output_dir / (Path(name).stem + "_snapshot.json"))
     return DiscoveryResult(report=report, workbook=workbook, snapshot=snap_path)
+
+
+@dataclass(frozen=True)
+class AssessmentRun:
+    result: AssessmentResult
+    workbook: Path
+    discovery: DiscoveryResult | None = None
+
+
+def run_assessment(
+    settings: Settings,
+    *,
+    discovery_workbook: Path,
+    output_dir: Path,
+    output_name: str | None = None,
+    rules_file: Path | None = None,
+    generated_at: datetime | None = None,
+) -> AssessmentRun:
+    """Assess a discovery workbook with the rules file and write the assessment workbook."""
+    from dbx_premig.estimation.effort import assess_workbook
+    from dbx_premig.estimation.rules import load_rules
+    from dbx_premig.excel.assessment_writer import write_assessment_workbook
+    from dbx_premig.excel.discovery_reader import read_discovery_workbook
+
+    rules = load_rules(rules_file or settings.assessment_rules)
+    workbook = read_discovery_workbook(discovery_workbook, settings)
+    if not workbook.assets:
+        raise NothingFoundError(f"{discovery_workbook.name} has no assessable objects.")
+    result = assess_workbook(
+        workbook, rules, occurrence_cap=settings.occurrence_cap, generated_at=generated_at
+    )
+    when = generated_at or datetime.now(UTC)
+    stem = re.sub(r"_\d{8}_\d{4}$", "", Path(discovery_workbook).stem)
+    stem = stem.replace("databricks_discovery_", "") or "workspace"
+    name = output_name or f"databricks_assessment_{stem}_{when:%Y%m%d_%H%M}.xlsx"
+    if not name.lower().endswith(".xlsx"):
+        name += ".xlsx"
+    path = write_assessment_workbook(result, output_dir / name, settings, rules.text, rules.sha256)
+    return AssessmentRun(result=result, workbook=path)
+
+
+def run_analysis(
+    settings: Settings,
+    *,
+    input_path: Path | None,
+    output_dir: Path,
+    rules_file: Path | None = None,
+    keep_snapshot: bool = False,
+    progress: ProgressFn | None = None,
+    credentials: Credentials | None = None,
+) -> AssessmentRun:
+    """Discovery (live or offline) followed by the assessment of the workbook it wrote."""
+    discovery = run_discovery(
+        settings,
+        input_path=input_path,
+        output_dir=output_dir,
+        keep_snapshot=keep_snapshot,
+        progress=progress,
+        credentials=credentials,
+    )
+    run = run_assessment(
+        settings, discovery_workbook=discovery.workbook, output_dir=output_dir,
+        rules_file=rules_file,
+    )  # fmt: skip
+    return AssessmentRun(result=run.result, workbook=run.workbook, discovery=discovery)

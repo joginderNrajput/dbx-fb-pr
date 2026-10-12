@@ -111,6 +111,18 @@ def run_interactive() -> int:
         result = execute(settings, input_path, out, None, keep)
         print_summary(result)
         print(result.workbook)
+        assess = not _tty() or Confirm.ask(
+            "Also run the assessment (complexity, automation, hours)?",
+            default=True,
+            console=stderr_console,
+        )
+        if assess:
+            from dbx_premig.cli import print_assessment
+            from dbx_premig.service import run_assessment
+
+            assessed = run_assessment(settings, discovery_workbook=result.workbook, output_dir=out)
+            print_assessment(assessed)
+            print(assessed.workbook)
         _pause()
         return 0
     except DiscoveryError as exc:

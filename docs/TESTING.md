@@ -13,7 +13,7 @@ Python 3.11–3.13. From the repository root:
 ```bash
 python -m venv .venv
 source .venv/bin/activate            # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+pip install -e ".[dev]"            # includes the api and postgres extras
 ```
 
 With [uv](https://docs.astral.sh/uv/) instead: `uv venv && uv pip install -e ".[dev]"`.
@@ -34,7 +34,12 @@ ruff check . && ruff format --check .
 mypy dbx_premig tests scripts
 pytest                                # unit + end-to-end, coverage gate 80 %
 pytest --run-slow                     # adds the LibreOffice recalculation and wheel tests
+DBXF_TEST_DATABASE_URL=postgresql://user:pw@localhost:5432/test pytest   # + Postgres tests
 ```
+
+The Postgres tests (`database` marker) are skipped unless `DBXF_TEST_DATABASE_URL` points at
+a database the tests may create and drop schemas in; each test uses its own throwaway
+schema. A local one: `docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pw postgres:16-alpine`.
 
 or simply `make check` (and `make test-all` for the slow tests).
 
@@ -51,6 +56,9 @@ or simply `make check` (and `make test-all` for the slow tests).
 | `test_cli.py` | CLI exit codes, stdout carries only the workbook path, CLI ≡ service parity, live run against the fake workspace with `--save-snapshot`, interactive mode without a terminal |
 | `test_hygiene.py` | repository rules: `from __future__` + `__all__` everywhere, no `__file__` paths outside `resources.py`, no `extractall`, only GET/OAuth in the client, Kanerika logo and banner byte-identical to `Tempelate_sheet.xlsx`, versions consistent |
 | `test_packaging.py` (slow) | the wheel carries every bundled resource exactly once |
+| `test_assessment.py` | the rules language (and that it refuses imports, attributes, lambdas …), rules-file validation, hand-checked estimates, the discovery-workbook reader round trip (editing a row changes the assessment, editing a total does not), the assessment workbook; slow: LibreOffice recalculates Summary and it equals the Python computation |
+| `test_db.py` | migration file in step with the schema, URL never shows credentials; with Postgres: all five tables written, re-posting the same org/job replaces, foreign keys line up, too-long values rejected |
+| `test_api.py` | upload path, Databricks-credentials path (JSON and multipart, PAT and OAuth) against the fake workspace, 401/409/410/413/415/422/503, API key, persistence through the API |
 
 The fake workspace (`tests/fake_workspace.py`) is a small HTTP server that answers the real
 Databricks REST paths from `tests/fixtures/mini/snapshot.json`, one item per page, so the
@@ -107,6 +115,47 @@ python discovery.py discover --host https://adb-1.azuredatabricks.net --token wr
 ```
 
 No command may print a Python traceback unless `--verbose` is given.
+
+---
+
+## 3b. Assessment, database and API (no workspace needed)
+
+```bash
+# discovery + assessment in one go (both workbooks in output/)
+python discovery.py analyze --input tests/fixtures/mini/snapshot.json --out output
+# or assess an existing discovery workbook
+python discovery.py assess --input output/databricks_discovery_*.xlsx --out output
+```
+
+Expected: `41 assets · 22 simple / 14 medium / 5 complex · 24 fully / 13 partially automated /
+4 manual · 218.9 h manual -> 151.2 h with automation (31% saved)`.
+
+**Try a different formula**: copy `dbx_premig/estimation/data/assessment_rules.yaml`, change
+e.g. `manual_test_hours: "manual_dev_hours * 0.5"`, run `python discovery.py rules-check
+--rules my.yaml`, then `assess --rules my.yaml`: the hours change, the Rules sheet shows your
+file. Break a formula on purpose (`lnes / 10`): `rules-check` exits 5 naming the key.
+
+**Database**:
+
+```bash
+export DBXF_DATABASE_URL=postgresql+psycopg://user:pw@localhost:5432/premig
+python discovery.py db-init                       # creates schema + 5 tables (idempotent)
+python discovery.py analyze --input tests/fixtures/mini/snapshot.json --out output \
+    --persist --org org-1 --job job-1             # "Saved to … as scan N (totals 1, inventory 41, …)"
+psql "$DBXF_DATABASE_URL" -c "select * from databricks_to_fabric_premigration.computation"
+```
+
+Run the same command again: the summary says *replaced the previous run* and the tables
+still hold one scan for `org-1 / job-1`.
+
+**API** (see [API.md](API.md)):
+
+```bash
+python discovery.py serve                          # http://127.0.0.1:7072/docs
+curl -X POST localhost:7072/v1/assessments -F organizationId=o -F jobId=j -F wait=true \
+     -F file=@output/databricks_discovery_<…>.xlsx
+curl -o a.xlsx localhost:7072/v1/runs/<runId>/assessment
+```
 
 ---
 
@@ -217,8 +266,9 @@ powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # Windows
 ```
 
 The build script then **smoke-tests the built binary**: `version`, `catalog-info`, a discovery
-of the fixture snapshot and of the offline notebooks, and `verify_workbook.py` on both
-workbooks. A missing bundled data file shows up here (the binary starts, then fails on its
+of the fixture snapshot and of the offline notebooks, an assessment of the first, and
+`verify_workbook.py` on all three workbooks. The executable discovers and assesses; the REST
+API and the database sink are not bundled (use the Docker image or a pip install for those). A missing bundled data file shows up here (the binary starts, then fails on its
 first discovery), not at the client.
 
 Manual checks of the binary (`dist/dbx-discovery` or `dist\dbx-discovery.exe`):
@@ -249,4 +299,7 @@ asked for it, the snapshot JSON).
 | *HTTP 404* for a collector | feature not enabled in that workspace (e.g. no Unity Catalog, no Lakeview); expected |
 | Notebook rows with *Scanned = No* | larger than `max_notebook_bytes` (5 MB) or not exportable |
 | Excel shows 0 everywhere | the file was opened in a viewer that does not recalculate; open in Excel or LibreOffice |
+| exit 5 on `assess` | the rules file is invalid: `rules-check --rules <file>` names the key |
+| exit 8 on `assess` | the input is not a discovery workbook written by this tool |
+| exit 9 | database unreachable / tables missing: check `DBXF_DATABASE_URL`, run `db-init` |
 | exit 1, *Internal error* | a bug: re-run with `-v` and report the class name and traceback (no client data is printed) |

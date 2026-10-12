@@ -56,8 +56,8 @@ def nav_link(sheet: str, text: str | None = None) -> str:
     return f'=HYPERLINK("#\'{sheet}\'!A1","{label}")'
 
 
-def back_link(ws: Worksheet, description: str) -> None:
-    ws["A5"] = nav_link("Discovery", "«  Back to Discovery")
+def back_link(ws: Worksheet, description: str, home: str = "Discovery") -> None:
+    ws["A5"] = nav_link(home, f"«  Back to {home}")
     ws["A5"].font = theme.LINK_FONT
     ws["B5"] = description
     ws["B5"].font = theme.NOTE_FONT

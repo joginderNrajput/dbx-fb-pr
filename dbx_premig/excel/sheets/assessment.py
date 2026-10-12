@@ -11,6 +11,9 @@ from dbx_premig.models import DiscoveryReport
 __all__ = ["ASSETS", "FINDINGS", "WARNINGS", "FindingRow"]
 
 N = "#,##0"
+ASSET_KEY_NOTE = (
+    "Joins Assets, Findings and the detail sheets; the assessment reads it back. Do not edit."
+)
 
 
 class FindingRow:
@@ -18,6 +21,7 @@ class FindingRow:
 
     __slots__ = (
         "asset",
+        "asset_key",
         "asset_type",
         "category",
         "guidance",
@@ -35,6 +39,7 @@ class FindingRow:
 def _finding_rows(report: DiscoveryReport) -> Sequence[FindingRow]:
     rows = [
         FindingRow(
+            asset_key=a.key,
             asset_type=a.asset_type,
             asset=a.location or a.name if a.asset_type == "Notebook" else a.name,
             rule=f.feature_id,
@@ -79,6 +84,7 @@ ASSETS = SheetSpec(
             note=READINESS_NOTE,
         ),
         Column("Readiness", "readiness", 13),
+        Column("Asset key", "key", 30, note=ASSET_KEY_NOTE),
     ],
     rows=lambda r: r.assessments,
     readiness_column="Readiness",
@@ -100,6 +106,7 @@ FINDINGS = SheetSpec(
         Column("Penalty", "penalty", 9, numeric=True, number_format=N),
         Column("Fabric support", "support", 14),
         Column("What to do in Fabric", "guidance", 90),
+        Column("Asset key", "asset_key", 30, note=ASSET_KEY_NOTE),
     ],
     rows=_finding_rows,
 )

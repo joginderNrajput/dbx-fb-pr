@@ -9,7 +9,7 @@ The exit codes are a contract that CI pipelines branch on. Never renumber them.
 | 2    | unsupported file type                           |
 | 3    | malformed artifact                              |
 | 4    | unsafe archive                                  |
-| 5    | catalog error                                   |
+| 5    | catalog or assessment-rules error               |
 | 6    | report write error                              |
 | 7    | nothing found to analyse                        |
 | 8    | invalid discovery workbook / snapshot           |
@@ -28,9 +28,11 @@ __all__ = [
     "DatabaseError",
     "DiscoveryError",
     "InvalidSnapshotError",
+    "InvalidWorkbookError",
     "MalformedArtifactError",
     "NothingFoundError",
     "ReportWriteError",
+    "RulesError",
     "UnsupportedFileError",
 ]
 
@@ -62,6 +64,10 @@ class CatalogError(DiscoveryError):
     exit_code = 5
 
 
+class RulesError(CatalogError):
+    """The assessment rules file is unreadable or invalid (same exit code as the catalog)."""
+
+
 class ReportWriteError(DiscoveryError):
     exit_code = 6
 
@@ -72,6 +78,10 @@ class NothingFoundError(DiscoveryError):
 
 class InvalidSnapshotError(DiscoveryError):
     exit_code = 8
+
+
+class InvalidWorkbookError(InvalidSnapshotError):
+    """The file given to ``assess`` is not a readable discovery workbook."""
 
 
 class DatabaseError(DiscoveryError):

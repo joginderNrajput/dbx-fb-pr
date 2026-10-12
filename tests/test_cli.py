@@ -162,3 +162,20 @@ def test_main_without_args_runs_prompts(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 0
+
+
+def test_assess_and_analyze_commands(tmp_path: Path) -> None:
+    r = _invoke("analyze", "--input", str(SNAPSHOT), "--out", str(tmp_path))
+    assert r.exit_code == 0, r.output
+    discovery, assessment = r.stdout.strip().splitlines()[-2:]
+    assert Path(discovery).is_file() and Path(assessment).is_file()
+    r = _invoke("assess", "--input", discovery, "--out", str(tmp_path), "--name", "again")
+    assert r.exit_code == 0 and (tmp_path / "again.xlsx").is_file()
+    assert _invoke("rules-check").exit_code == 0
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("version: 1\n")
+    assert _invoke("rules-check", "--rules", str(bad)).exit_code == 5
+    assert _invoke("assess", "--input", str(bad), "--out", str(tmp_path)).exit_code == 8
+    r = _invoke("assess", "--input", discovery, "--out", str(tmp_path), "--persist")
+    assert r.exit_code == 11  # no database configured
+    assert "CREATE TABLE" in _invoke("db-init", "--print-sql").stdout

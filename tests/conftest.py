@@ -62,3 +62,32 @@ def report(snapshot: RawSnapshot, settings: Settings) -> DiscoveryReport:
     from dbx_premig.service import build_report
 
     return build_report(snapshot, settings, generated_at=FIXED_CLOCK)
+
+
+#: Postgres for the `database` tests: DBXF_TEST_DATABASE_URL (skipped when unset).
+_TEST_DB = os.environ.get("DBXF_TEST_DATABASE_URL")
+
+
+@pytest.fixture
+def pg_settings(tmp_path: Path) -> Iterator[Settings]:
+    """Settings on a fresh schema of the test database (dropped afterwards)."""
+    if not _TEST_DB:
+        pytest.skip("set DBXF_TEST_DATABASE_URL to run the Postgres tests")
+    import uuid
+
+    from pydantic import SecretStr
+
+    from dbx_premig.db.engine import create_schema
+
+    schema = f"t_{uuid.uuid4().hex[:10]}"
+    settings = load_settings(database_url=SecretStr(_TEST_DB), db_schema=schema)
+    create_schema(settings)
+    yield settings
+    from dbx_premig.db.engine import get_engine
+
+    engine = get_engine(settings)
+    import sqlalchemy as sa
+
+    with engine.begin() as conn:
+        conn.execute(sa.text(f'DROP SCHEMA "{schema}" CASCADE'))
+    engine.dispose()

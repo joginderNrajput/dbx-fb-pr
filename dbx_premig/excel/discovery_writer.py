@@ -19,7 +19,7 @@ from dbx_premig.logging import get_logger
 from dbx_premig.models import DiscoveryReport
 from dbx_premig.version import APP_NAME, APP_VERSION
 
-__all__ = ["build_workbook", "write_discovery_workbook"]
+__all__ = ["build_workbook", "save_atomically", "write_discovery_workbook"]
 
 log = get_logger("excel")
 
@@ -50,7 +50,11 @@ def build_workbook(report: DiscoveryReport, settings: Settings) -> Workbook:
 
 def write_discovery_workbook(report: DiscoveryReport, path: Path, settings: Settings) -> Path:
     """Build and atomically save the workbook. Raises ReportWriteError."""
-    wb = build_workbook(report, settings)
+    return save_atomically(build_workbook(report, settings), path)
+
+
+def save_atomically(wb: Workbook, path: Path) -> Path:
+    """Save via a temporary file in the same folder, then rename. Raises ReportWriteError."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(suffix=".xlsx", dir=path.parent)

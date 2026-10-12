@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-__all__ = ["asset_path", "catalog_path", "package_root"]
+__all__ = ["asset_path", "catalog_path", "package_root", "rules_path"]
 
 
 def package_root() -> Path:
@@ -28,3 +28,8 @@ def catalog_path(name: str) -> Path:
 def asset_path(name: str) -> Path:
     """Path of a brand asset in ``excel/assets``."""
     return package_root() / "excel" / "assets" / name
+
+
+def rules_path() -> Path:
+    """The bundled default assessment rules file."""
+    return package_root() / "estimation" / "data" / "assessment_rules.yaml"

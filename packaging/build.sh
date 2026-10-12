@@ -20,4 +20,6 @@ rm -rf "$SMOKE" && mkdir -p "$SMOKE"
 "$BIN" discover --input tests/fixtures/mini/notebooks --out "$SMOKE" --name offline.xlsx
 "$PYTHON" packaging/verify_workbook.py "$SMOKE/live.xlsx" --min-assets 40
 "$PYTHON" packaging/verify_workbook.py "$SMOKE/offline.xlsx" --min-assets 5
+"$BIN" assess --input "$SMOKE/live.xlsx" --out "$SMOKE" --name assessment.xlsx
+"$PYTHON" packaging/verify_workbook.py "$SMOKE/assessment.xlsx" --kind assessment --min-assets 40
 echo "OK: $BIN ($(du -h "$BIN" | cut -f1))"

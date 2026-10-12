@@ -16,7 +16,7 @@ from dbx_premig.excel import theme
 if TYPE_CHECKING:
     from dbx_premig.excel.sheets.totals import TotalsRefs
 
-__all__ = ["CHART_ANCHORS", "add_dashboard_charts", "write_chart_helpers"]
+__all__ = ["CHART_ANCHORS", "add_dashboard_charts", "data_labels", "write_chart_helpers"]
 
 #: Top-left cells of the three dashboard charts (kept apart so they never overlap).
 CHART_ANCHORS = ("H30", "Z30", "AR30")
@@ -47,6 +47,11 @@ def write_chart_helpers(wb: Workbook, refs: TotalsRefs) -> None:
         "ChartTopFindings",
         [(f"={label}", f"={count}") for label, count in refs.top_findings[:_TOP_FINDINGS]],
     )
+
+
+def data_labels() -> DataLabelList:
+    """Value-only data labels (no category / series / legend key)."""
+    return _labels()
 
 
 def _labels() -> DataLabelList:

@@ -6,6 +6,7 @@ environment variables -> CLI flags (applied with ``model_copy``).
 
 from __future__ import annotations
 
+import re
 import tomllib
 from contextvars import ContextVar
 from functools import lru_cache
@@ -126,11 +127,33 @@ class Settings(BaseSettings):
     occurrence_cap: Annotated[int, Field(ge=1)] = 10
     """Occurrences of one code feature beyond this add no more weight."""
 
-    # ------------------------------------------------------------------ API (later prompt)
+    # ------------------------------------------------------------------ assessment
+    assessment_rules: Path | None = None
+    """Assessment rules file (complexity / automation / effort formulas). None = bundled."""
+
+    # ------------------------------------------------------------------ API
     api_host: str = "127.0.0.1"
-    """Listening address of the optional API server."""
+    """Listening address of the API server."""
     api_port: Annotated[int, Field(ge=1, le=65535)] = 7072
-    """Listening port of the optional API server."""
+    """Listening port of the API server."""
+    api_key: SecretStr | None = None
+    """When set, every /v1 request must send it in the X-API-Key header."""
+    api_work_dir: Path = Path("api_runs")
+    """Where the API keeps uploaded files and generated workbooks of each run."""
+    api_run_ttl_s: Annotated[int, Field(ge=60)] = 24 * 3600
+    """How long a finished run (and its workbooks) stays downloadable; then 410 Gone."""
+    api_max_workers: Annotated[int, Field(ge=1, le=32)] = 2
+    """Runs executed in parallel by the API."""
+    max_upload_bytes: Annotated[int, Field(ge=1024)] = 100_000_000
+    """Largest discovery workbook accepted by the API (checked while streaming)."""
+    cors_origins: tuple[str, ...] = ()
+    """Origins allowed by CORS (empty = CORS off)."""
+
+    # ------------------------------------------------------------------ database (optional)
+    database_url: SecretStr | None = None
+    """Postgres URL (postgresql+psycopg://user:pass@host:5432/db). Unset = no persistence."""
+    db_schema: str = "databricks_to_fabric_premigration"
+    """Postgres schema holding the discovery / assessment tables."""
 
     # ------------------------------------------------------------------ logging
     log_level: str = "WARNING"
@@ -144,6 +167,13 @@ class Settings(BaseSettings):
         value = value.strip().rstrip("/")
         if not value.startswith(("https://", "http://")):
             value = "https://" + value
+        return value
+
+    @field_validator("db_schema")
+    @classmethod
+    def _schema_identifier(cls, value: str) -> str:
+        if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value):
+            raise ValueError("db_schema must be a lower-case SQL identifier")
         return value
 
     @field_validator("collectors")

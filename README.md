@@ -10,6 +10,11 @@ identity — with the Fabric target and a first readiness classification for eac
 * **Live or offline**: scan a workspace through the REST API, or read exported notebooks
   (`.py .sql .scala .r .ipynb`, `.dbc`, `.zip`) or a saved snapshot.
 * **One file to send**: a single executable built with PyInstaller (Windows / Linux / macOS).
+* **Assessment on top of discovery**: complexity (Simple / Medium / Complex), automation level
+  (Fully / Partially automated / Manual) and manual vs automated hours per object, from a
+  configurable rules file; a second branded workbook, optional Postgres tables
+  (`totals`, `inventory`, `finding`, `estimation`, `computation`) and a REST API that takes
+  either a discovery workbook or Databricks credentials.
 
 ## Quick start
 
@@ -51,11 +56,17 @@ python discovery.py discover [OPTIONS]
   --skip-repos --no-columns --no-view-sql --max-notebooks N --insecure
   -c, --config FILE       settings file (.yaml / .toml); every setting also as DBXF_<NAME>
   -v, --verbose
+python discovery.py assess  -i discovery.xlsx [--rules my_rules.yaml] [--persist --org O --job J]
+python discovery.py analyze [discover options] [--rules …] [--persist --org O --job J]
+python discovery.py rules-check [--rules my_rules.yaml]
+python discovery.py db-init [--print-sql]          # needs DBXF_DATABASE_URL
+python discovery.py serve [--host --port]          # REST API (api extra)
 python discovery.py version | catalog-info | collectors
 ```
 
-Exit codes: 0 ok · 1 internal error · 2 unsupported file · 4 unsafe archive · 5 catalog ·
-6 cannot write · 7 nothing found · 8 invalid snapshot · 10 connection/auth · 11 configuration.
+Exit codes: 0 ok · 1 internal error · 2 unsupported file · 4 unsafe archive · 5 catalog /
+rules · 6 cannot write · 7 nothing found · 8 invalid snapshot / workbook · 9 database ·
+10 connection/auth · 11 configuration.
 
 ## The workbook
 
@@ -67,6 +78,29 @@ Schemas, Tables, Columns, Views, Volumes, ExternalLocations, StorageCredentials,
 Functions, Grants, SQLQueries, Dashboards, Alerts, Models, ServingEndpoints, Experiments,
 SecretScopes, Mounts, Identities) → **Warnings** → **Information** → **Totals** (the single
 source of truth: every number is a live formula).
+
+## The assessment
+
+`analyze` (or `assess` on an existing discovery workbook) writes
+`databricks_assessment_*.xlsx`: **Assessment** dashboard, **Estimation** (per object),
+**EffortByType**, **Summary** (single source of truth), **Rules** (the formulas used), **About**.
+All formulas — complexity score and levels, automation rules, hours per type and level,
+automation factors — live in `dbx_premig/estimation/data/assessment_rules.yaml`; pass your
+own copy with `--rules` or `DBXF_ASSESSMENT_RULES`. See [docs/ASSESSMENT.md](docs/ASSESSMENT.md).
+
+## REST API and database
+
+```bash
+pip install -e ".[api,postgres]"
+export DBXF_DATABASE_URL=postgresql+psycopg://user:pw@host:5432/db
+python discovery.py db-init && python discovery.py serve --host 0.0.0.0
+# or: docker compose --profile local-db up -d --build
+```
+
+`POST /v1/assessments` (multipart: discovery workbook, or credentials) and
+`POST /v1/assessments/databricks` (JSON credentials) run in the background and return a run
+id; download both workbooks from `/v1/runs/{id}/…`. Results are written to Postgres with the
+request's `organizationId` and `jobId`. See [docs/API.md](docs/API.md).
 
 ## Build the executable
 
@@ -86,6 +120,8 @@ new as the build machine's.
 * [docs/TESTING.md](docs/TESTING.md) — how to test: automated gate, offline runs, a real
   workspace, the executable, what to check in the workbook, troubleshooting
 * [docs/METHODOLOGY.md](docs/METHODOLOGY.md) — every number and why
+* [docs/ASSESSMENT.md](docs/ASSESSMENT.md) — rules file, assessment workbook, database tables
+* [docs/API.md](docs/API.md) — REST API
 * [docs/CATALOG.md](docs/CATALOG.md) — the Databricks → Fabric support catalog
 * [CLAUDE.md](CLAUDE.md) — architecture, invariants, build order (read first when developing)
 * [docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md](docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md) —

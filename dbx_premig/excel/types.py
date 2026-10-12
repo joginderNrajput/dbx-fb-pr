@@ -6,8 +6,6 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from dbx_premig.models import DiscoveryReport
-
 __all__ = ["Column", "SheetSpec", "Value"]
 
 Value = str | int | float | bool | None
@@ -22,7 +20,7 @@ class Column:
     """
 
     header: str
-    value: str | Callable[[Any, DiscoveryReport], Value] = ""
+    value: str | Callable[[Any, Any], Value] = ""
     width: float = 14
     numeric: bool = False
     number_format: str | None = None
@@ -39,7 +37,7 @@ class SheetSpec:
     title: str
     description: str
     columns: Sequence[Column]
-    rows: Callable[[DiscoveryReport], Sequence[Any]]
+    rows: Callable[[Any], Sequence[Any]]  # report -> rows (DiscoveryReport or AssessmentResult)
     readiness_column: str | None = None  # header of a Readiness column to colour
     tab_colour: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
