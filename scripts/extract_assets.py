@@ -4,8 +4,8 @@
   workbook (``Tempelate_sheet.xlsx``), so the branding matches Kanerika's other accelerators.
 * ``platform_logo.png`` ("Databricks -> Microsoft Fabric") is rendered from the SVGs in
   ``scripts/brand_src`` (see SOURCES.md there).
-* ``titles/<Sheet>.png`` are the white sheet titles drawn over the banner (cell text would
-  sit under the banner picture). Re-run this script after adding a sheet or changing a title.
+* ``banner_font.ttf`` is Inter SemiBold (SIL Open Font License 1.1), subset to the characters
+  of sheet titles; ``excel/banner.py`` draws each sheet's banner with it at run time.
 * ``app.ico`` is the executable icon for PyInstaller.
 
 Build-time only (needs the ``dev`` extra: cairosvg, pillow). Never imported by the package.
@@ -85,56 +85,26 @@ def render_platform_logo() -> None:
     img.save(OUT / "platform_logo.png", optimize=True)
 
 
-def sheet_titles() -> dict[str, str]:
-    """Sheet name -> banner title, read from the package (the single source of the titles)."""
-    import sys
+def subset_font() -> None:
+    """Inter SemiBold (SIL OFL 1.1), subset to the characters a banner title can use."""
+    from fontTools import subset
 
-    sys.path.insert(0, str(ROOT))
-    from dbx_premig.excel import dashboard
-    from dbx_premig.excel.sheets import information, totals
-    from dbx_premig.excel.writer import DATA_SHEETS
-
-    titles = {
-        "Discovery": dashboard.TITLE,
-        "Information": information.TITLE,
-        "Totals": totals.TITLE,
-    }
-    titles.update({spec.name: spec.title for spec in DATA_SHEETS})
-    from dbx_premig.excel.sheets import assessment_report as ar
-
-    titles.update(
-        {
-            "Assessment": ar.DASHBOARD_TITLE,
-            "Estimation": ar.ESTIMATION.title,
-            "EffortByType": ar.EFFORT_BY_TYPE.title,
-            "Summary": ar.SUMMARY_TITLE,
-            "Rules": ar.RULES_TITLE,
-            "About": ar.ABOUT_TITLE,
-        }
-    )
-    return titles
-
-
-def render_titles() -> None:
-    """White title text on transparency, rendered at 2x (shown at half size, never stretched)."""
-    out = OUT / "titles"
-    out.mkdir(exist_ok=True)
-    for old in out.glob("*.png"):
-        old.unlink()
-    font = _font(42)
-    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-    for sheet, title in sorted(sheet_titles().items()):
-        box = probe.textbbox((0, 0), title, font=font)
-        width, height = box[2] - box[0] + 8, 64
-        img = Image.new("RGBA", (int(width + width % 2), height), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
-        draw.text(
-            (4 - box[0], (height - (box[3] - box[1])) // 2 - box[1]),
-            title,
-            font=font,
-            fill=(255, 255, 255, 255),
-        )
-        img.save(out / f"{sheet}.png", optimize=True)
+    source = next(
+        (Path(p) for p in _FONT_CANDIDATES if p.endswith(("Inter-SemiBold.otf", ".ttf"))
+         and Path(p).is_file()),
+        None,
+    )  # fmt: skip
+    if source is None:
+        raise SystemExit("Inter SemiBold not found: install fonts-inter or edit _FONT_CANDIDATES")
+    options = subset.Options()
+    options.flavor = None
+    options.desubroutinize = True
+    font = subset.load_font(str(source), options)
+    chars = "".join(chr(c) for c in range(0x20, 0x7F)) + "·→–—…’“”"
+    subsetter = subset.Subsetter(options)
+    subsetter.populate(text=chars)
+    subsetter.subset(font)
+    subset.save_font(font, str(OUT / "banner_font.ttf"), options)
 
 
 def render_icon() -> None:
@@ -153,7 +123,7 @@ def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     copy_template_assets(args.template)
     render_platform_logo()
-    render_titles()
+    subset_font()
     render_icon()
     print(f"assets written to {OUT.relative_to(ROOT)} and {PACKAGING.relative_to(ROOT)}")
 

@@ -320,11 +320,3 @@ def test_build_workbook_with_no_assets_is_rejected(tmp_path: Path, settings: Set
     with pytest.raises(NothingFoundError):
         run_assessment(settings, discovery_workbook=path, output_dir=tmp_path)
     _ = (build_assessment_workbook, datetime, UTC)
-
-
-def test_title_assets_exist_for_assessment_sheets() -> None:
-    from dbx_premig.excel.sheets.assessment_report import ASSESSMENT_SHEETS
-    from dbx_premig.resources import asset_path
-
-    missing = [s for s in ASSESSMENT_SHEETS if not asset_path(f"titles/{s}.png").is_file()]
-    assert not missing, f"run scripts/extract_assets.py: {missing}"

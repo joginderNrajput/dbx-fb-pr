@@ -121,10 +121,14 @@ dist=`dbx-premig`, PFX=`DBXF`, PORT=7072.
   `test_formula_columns_stay_put`.
 - Client text is written as a string even if it starts with `=` (formula injection), control
   characters removed, truncated to `max_cell_chars`.
-- Banner image covers cells, so titles are pre-rendered PNG overlays
-  (`excel/assets/titles/<Sheet>.png`); Kanerika logo + banner are byte-identical copies from
-  `Tempelate_sheet.xlsx` (`test_hygiene.py::test_brand_assets_copied_byte_identically`).
-  After adding a sheet or changing a title: `python scripts/extract_assets.py`.
+- The banner (rows 1-4) is ONE picture per sheet, composed at run time by `excel/banner.py`
+  (gradient + Kanerika logo + title + Databricks -> Fabric logo, all centred vertically),
+  anchored at A1 with an absolute size. *Why:* separate pictures anchored by column offsets
+  overlapped in Excel, which caps an offset at its column's width (LibreOffice does not).
+  Pinned by `test_workbook.py::test_banner_is_one_picture_at_a1`. Never put title text in
+  cells under the banner. Gradient and Kanerika logo are byte-identical copies from
+  `Tempelate_sheet.xlsx` (`test_hygiene.py::test_brand_assets_copied_byte_identically`); the
+  font is a subset of Inter SemiBold (OFL), made by `scripts/extract_assets.py`.
 - Sheet modules are grouped by area (`sheets/code.py`, `orchestration.py`, `compute.py`,
   `data.py`, `analytics.py`, `platform.py`, `assessment.py`) rather than one file per sheet:
   33 data sheets share one declarative `SheetSpec` engine, so a file each would be noise.
@@ -154,7 +158,7 @@ dbx_premig/
                  formula.py (safe expressions) rules.py (+ data/assessment_rules.yaml)
                  effort.py (the assessment engine) | plan.py (stub)
   excel/         theme layout types writer dashboard charts discovery_writer
-                 discovery_reader assessment_writer  sheets/*  assets/ (+ titles/)
+                 discovery_reader assessment_writer  banner  sheets/*  assets/
   service.py cli.py prompts.py __main__.py
   api/           app.py routes.py schemas.py jobs.py uploads.py
   db/            schema.py engine.py persist.py migrations/0001_initial.sql

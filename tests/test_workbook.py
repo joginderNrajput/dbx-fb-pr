@@ -110,15 +110,7 @@ def test_branding_on_every_visible_sheet(wb: Workbook) -> None:
     for name in SHEET_ORDER:
         if name in CHART_SHEETS:
             continue
-        assert len(wb[name]._images) == 4, name  # banner, logo, platform logo, title
-
-
-def test_title_asset_exists_for_every_sheet() -> None:
-    titles = ROOT / "dbx_premig" / "excel" / "assets" / "titles"
-    missing = [
-        n for n in SHEET_ORDER if n not in CHART_SHEETS and not (titles / f"{n}.png").is_file()
-    ]
-    assert not missing, f"run scripts/extract_assets.py: {missing}"
+        assert len(wb[name]._images) == 1, name  # one composed banner picture
 
 
 def test_client_text_is_never_a_formula(report: DiscoveryReport, settings: Settings) -> None:
@@ -213,30 +205,25 @@ def test_totals_recalculate_to_python_summary(
     assert not errors
 
 
-def _anchors(ws: Any) -> list[tuple[str, int, int, int, int]]:
-    """(image, left px, top px, width px, height px) of each one-cell picture."""
+def _banner_ok(ws: Any) -> None:
     from openpyxl.utils.units import EMU_to_pixels
 
-    from dbx_premig.excel.layout import column_px
+    from dbx_premig.excel.banner import BAND_HEIGHT_PX
 
-    out = []
-    for img in ws._images:
-        a = img.anchor
-        if type(a).__name__ != "OneCellAnchor":
-            continue
-        col, off = a._from.col, EMU_to_pixels(a._from.colOff)
-        # Excel caps the offset at the column width: it must fit inside its column.
-        assert off < column_px(ws, col + 1), f"{ws.title}: offset {off}px > column {col}"
-        left = sum(column_px(ws, c) for c in range(1, col + 1)) + off
-        out.append((img.ref if isinstance(img.ref, str) else "", left,
-                    EMU_to_pixels(a._from.rowOff), EMU_to_pixels(a.ext.width),
-                    EMU_to_pixels(a.ext.height)))  # fmt: skip
-    return out
+    (img,) = ws._images
+    anchor = img.anchor
+    assert type(anchor).__name__ == "OneCellAnchor", ws.title
+    assert (anchor._from.col, anchor._from.colOff, anchor._from.row, anchor._from.rowOff) == (
+        0, 0, 0, 0)  # fmt: skip
+    assert EMU_to_pixels(anchor.ext.height) == BAND_HEIGHT_PX
+    assert EMU_to_pixels(anchor.ext.width) >= 1500
 
 
-def test_banner_pictures_never_overlap(wb: Workbook, report: DiscoveryReport,
-                                       settings: Settings, tmp_path: Path) -> None:  # fmt: skip
-    """Kanerika logo, sheet title and platform logo sit side by side on every sheet."""
+def test_banner_is_one_picture_at_a1(
+    wb: Workbook, report: DiscoveryReport, settings: Settings, tmp_path: Path
+) -> None:
+    """Logo, title and platform logo are composed into ONE picture at A1 on every sheet, so
+    Excel cannot shift them onto each other (separate column-anchored pictures could)."""
     from dbx_premig.service import run_assessment
 
     discovery = write_discovery_workbook(report, tmp_path / "d.xlsx", settings)
@@ -245,9 +232,19 @@ def test_banner_pictures_never_overlap(wb: Workbook, report: DiscoveryReport,
     )
     for book in (wb, assessed):
         for ws in book.worksheets:
-            if ws.sheet_state == "hidden":
-                continue
-            boxes = sorted(_anchors(ws), key=lambda b: b[1])
-            assert len(boxes) == 3, ws.title  # logo, title, platform logo
-            for (_, l1, _, w1, _), (_, l2, _, _, _) in itertools.pairwise(boxes):
-                assert l1 + w1 <= l2, f"{ws.title}: banner pictures overlap"
+            if ws.sheet_state != "hidden":
+                _banner_ok(ws)
+
+
+def test_compose_banner_sizes_and_long_titles() -> None:
+    import io
+
+    from PIL import Image
+
+    from dbx_premig.excel.banner import BAND_HEIGHT_PX, compose_banner
+
+    img = Image.open(io.BytesIO(compose_banner("Jobs  ·  Databricks Workflows", 1600)))
+    assert img.size == (3200, BAND_HEIGHT_PX * 2) and img.format == "JPEG"
+    long = Image.open(io.BytesIO(compose_banner("X" * 400, 1500)))
+    assert long.size == (3000, BAND_HEIGHT_PX * 2)
+    assert compose_banner("a", 1500) == compose_banner("a", 1500)  # deterministic

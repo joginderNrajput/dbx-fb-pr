@@ -45,6 +45,7 @@ dev = [
     "pyinstaller>=6.5",
     "types-PyYAML>=6.0",
     "cairosvg>=2.7",
+    "fonttools>=4.40",
 ]
 
 [project.scripts]
@@ -78,7 +79,7 @@ plugins = ["pydantic.mypy"]
 exclude = ["^build/", "^dist/", "^packaging/.*\\.spec$", "^tests/fixtures/"]
 
 [[tool.mypy.overrides]]
-module = ["openpyxl.*", "cairosvg.*", "PIL.*"]
+module = ["openpyxl.*", "cairosvg.*", "PIL.*", "fontTools.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

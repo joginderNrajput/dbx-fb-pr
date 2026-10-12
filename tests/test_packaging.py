@@ -27,6 +27,6 @@ def test_wheel_carries_each_resource_once(tmp_path: Path) -> None:
         "dbx_premig/excel/assets/banner.png",
         "dbx_premig/excel/assets/kanerika_logo.png",
         "dbx_premig/excel/assets/platform_logo.png",
-        "dbx_premig/excel/assets/titles/Discovery.png",
+        "dbx_premig/excel/assets/banner_font.ttf",
     ):
         assert names.count(resource) == 1, resource
