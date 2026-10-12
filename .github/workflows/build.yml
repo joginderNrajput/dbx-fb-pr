@@ -1,0 +1,46 @@
+# Lint + test on every push / PR, and build the one-file executable on each OS
+# (PyInstaller cannot cross-compile). Download the binaries from the run's artifacts.
+name: build
+
+on:
+  push:
+    branches: [main, master, development, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check . && ruff format --check .
+      - run: mypy dbx_premig tests scripts
+      - run: python -m pytest
+
+  binary:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[dev]"
+      - name: Build and smoke-test (Windows)
+        if: runner.os == 'Windows'
+        run: powershell -ExecutionPolicy Bypass -File packaging\build.ps1
+      - name: Build and smoke-test (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: bash packaging/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dbx-discovery-${{ runner.os }}
+          path: dist/dbx-discovery*

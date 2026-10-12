@@ -1,0 +1,196 @@
+# CLAUDE.md — Databricks Pre-Migration Discovery (Microsoft Fabric edition)
+
+Read this first in every session. Built from `docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md`;
+where this project differs from the blueprint, the difference and its reason are stated here.
+
+## 1. Product
+
+Reads a Databricks workspace — **live** through the read-only REST API, or **offline** from
+exported notebooks (`.py .sql .scala .r .ipynb`, `.dbc`, `.zip`) or a saved snapshot
+(`.json`) — and writes a Kanerika-branded **discovery workbook** (`.xlsx`): the full estate
+(notebooks, jobs, DLT, compute, Unity Catalog down to columns, governance, analytics, ML,
+secrets, identities) with a first Fabric-readiness classification. No hours estimate.
+
+| Flow | Reads | Writes | Status |
+|---|---|---|---|
+| `discover` | workspace (live) or export / snapshot | discovery workbook (+ optional snapshot JSON) | **done** |
+| `assess` | a reviewed discovery workbook | effort-analysis workbook | prompt 05/06/09 (stubs) |
+| `analyze` | = `assess(discover(...))` | effort-analysis workbook | later |
+
+Entry point: root **`discovery.py`** (no args → interactive prompts; args → typer CLI). It is
+also the PyInstaller entry point. Ships as a single-file executable (`dist/dbx-discovery`),
+`python discovery.py`, `uv run discovery.py` (PEP 723 header) or the `dbx-premig` console
+script. The FastAPI skin and Docker image are later prompts.
+
+Placeholders: SOURCE=Databricks, TARGET=Microsoft Fabric, pkg=`dbx_premig`,
+dist=`dbx-premig`, PFX=`DBXF`, PORT=7072.
+
+## 2. Hard constraints
+
+- **Read-only against Databricks.** The live client sends only `GET` (plus one `POST
+  /oidc/v1/token` for service-principal OAuth). *Why:* it runs inside client workspaces with
+  admin tokens. *Pinned by* `test_hygiene.py::test_collector_only_reads`,
+  `test_collector.py` (`ws.methods == {"GET"}`).
+- **Deviation from blueprint "offline analysis":** collection is necessarily online, but it is
+  isolated in `client.py` + `collector.py`, which only *capture* raw JSON into a
+  `RawSnapshot`. Everything after (parser, estimation, excel) is offline and pure, so a saved
+  snapshot re-runs to the same workbook. No LLM, no cloud SDKs (stdlib `urllib` only).
+- **No database.** The Postgres sink (`db/`) is a stub and never feeds a number.
+- **Frozen-safe resources.** All bundled files via `resources.py`; never `__file__` elsewhere
+  (`test_hygiene.py::test_no_path_from_file_outside_resources`).
+- **Deterministic.** Rows are sorted explicitly (`casefold` then raw); same snapshot + clock →
+  equal report (`test_parser.py::test_deterministic`, `test_cli.py::test_report_deterministic`).
+  One rounding helper: `estimation/rounding.round_hours` (half-up via Decimal).
+- **One bad file / endpoint never ends a run.** Reader returns `ReadFailure`; collector turns
+  4xx into a warning row. Only 401 / unreachable host stop a live run.
+- **Never log client content or secrets.** Tokens are `SecretStr`, never in messages
+  (`test_client.py::test_secret_never_in_error_messages`). Secret **values** are never
+  requested; only key names. Connection options are not read.
+- **No magic numbers:** thresholds, caps, retries live in `config.Settings` (`DBXF_*`).
+- **Untrusted input:** `discovery.py`, `reader.py`, `client.py` responses. Archives: manifest
+  validated before reading (entries, total size, ratio, symlinks, path escape), members
+  streamed with a byte counter, never extracted (`test_reader.py::test_hostile_archives_refused`).
+- **Frozen pydantic models**; wire schemas (future `api/schemas.py`) separate from `models.py`.
+- **Secrets stay out of git:** `.env`, `*_snapshot.json`, `*.xlsx`, `*.zip`, `*.dbc` ignored.
+
+### Service, CLI & API invariants
+- `service.run_discovery` is the only orchestration; CLI and prompts call it
+  (`test_cli.py::test_cli_and_service_parity`).
+- stdout carries only the workbook path; progress / summary / errors go to stderr.
+- `_handle()` maps `DiscoveryError` → message + fixed exit code; no traceback without `-v`.
+- Precedence: CLI flags > `DBXF_*` env > `.env` > `--config` file > defaults
+  (`test_config.py::test_precedence_file_env_flags`; implemented with a custom settings source).
+
+### Packaging invariants
+- Spec `packaging/dbx_premig.spec`: entry `discovery.py`, `datas` = `catalog/data` +
+  `excel/assets`, UPX off, `db/` and `api/` excluded. Build per OS; `build.sh`/`build.ps1`
+  smoke-test the built binary with `verify_workbook.py`.
+- Pillow is a runtime dependency (openpyxl needs it to embed images).
+
+### Catalog invariants
+- `catalog/data/features.yaml` is data: unique ids, valid regex, verdict in
+  supported/partial/manual/unsupported. Unknown ids get a synthetic `unknown` entry + warning,
+  never dropped. Every id the parser emits must exist (`test_catalog.py`).
+
+### Estimation invariants
+- Readiness = `100 − Σ penalty × (1 + 0.1 × (min(n, cap) − 1))`, floored at 0; first match:
+  Unsupported (any unsupported verdict) → Compatible ≥ 80 → Partial ≥ 50 → Manual. Discovery
+  produces **no hours** (that is `assess`).
+
+### Workbook / rendering invariants
+- `writer.SHEET_ORDER` declared once; tests assert the file matches.
+- **Totals is the single source of truth**: every value a live formula over data sheets;
+  Discovery tiles, scan summary and hidden chart helpers are only `='Totals'!$B$n`
+  (`test_workbook.py::test_dashboard_is_only_formulas_into_totals`).
+- Rows 1–5 branding band, header row 6, data from row 7, freeze `A7`, autofilter.
+- Hex colours only in `excel/theme.py` (`test_no_hex_colours_outside_theme`).
+- Formula columns address fixed letters (Tables!A/B/F, JobTasks!A, Volumes/Functions!B/C):
+  `test_formula_columns_stay_put`.
+- Client text is written as a string even if it starts with `=` (formula injection), control
+  characters removed, truncated to `max_cell_chars`.
+- Banner image covers cells, so titles are pre-rendered PNG overlays
+  (`excel/assets/titles/<Sheet>.png`); Kanerika logo + banner are byte-identical copies from
+  `Tempelate_sheet.xlsx` (`test_hygiene.py::test_brand_assets_copied_byte_identically`).
+  After adding a sheet or changing a title: `python scripts/extract_assets.py`.
+- Sheet modules are grouped by area (`sheets/code.py`, `orchestration.py`, `compute.py`,
+  `data.py`, `analytics.py`, `platform.py`, `assessment.py`) rather than one file per sheet:
+  33 data sheets share one declarative `SheetSpec` engine, so a file each would be noise.
+
+### Parser invariants
+- Walks the real API structure (`settings.tasks[]`, `columns[]`, `spec.libraries[]`); no
+  generic descendant search (`test_no_descendant_search_in_parser`).
+- Skips by design: job/pipeline clusters (ephemeral), `system`/`samples`/internal catalogs,
+  `databricks-*` serving endpoints, `__databricks*` locations/credentials.
+- Notebook paths normalised (`/Workspace` prefix removed, `./` `../` resolved, extension
+  dropped) so `%run` / job / DLT dependencies resolve.
+
+## 3. Layout
+
+```
+discovery.py                 entry point (PEP 723), no logic
+dbx_premig/
+  version.py config.py errors.py logging.py models.py resources.py
+  discovery.py   offline input walk -> FileRef            (untrusted)
+  reader.py      hardened file / archive / snapshot reader (untrusted)
+  offline.py     FileRefs -> RawSnapshot
+  client.py      read-only REST client, auth, retries      (untrusted responses)
+  collector.py   live collectors -> RawSnapshot
+  parser.py      RawSnapshot -> Estate (rows + AssetRecords)
+  catalog/       loader.py + data/features.yaml
+  estimation/    complexity.py (readiness) aggregate.py rounding.py | effort.py plan.py (stubs)
+  excel/         theme layout types writer dashboard charts discovery_writer
+                 discovery_reader (stub)  sheets/*  assets/ (+ titles/)
+  service.py cli.py prompts.py __main__.py
+  api/ db/       stubs for later prompts
+scripts/extract_assets.py, scripts/brand_src/   brand assets (build time)
+packaging/       spec, build.sh, build.ps1, verify_workbook.py, icons, version info
+tests/           fake_workspace.py (local HTTP fake of the REST API), archives.py, fixtures/mini
+docs/            TESTING.md METHODOLOGY.md CATALOG.md + the blueprint
+```
+
+Data flow: `collector|offline -> RawSnapshot -> parser -> estimation -> excel`;
+`service.py` orchestrates; `cli.py` / `prompts.py` are skins.
+
+## 4. Build order
+
+| # | Prompt | Status |
+|---|---|---|
+| 01 | Scaffold, configuration and domain model | done |
+| 02 | Discovery and hardened reader (+ live client / collector) | done |
+| 03 | Parser → inventory and feature counts | done |
+| 04 | Target-support catalog | done (hand-written YAML; no generator yet) |
+| 05 | Complexity, automation and effort | readiness done; hours = stub |
+| 06 | Plan, lanes and schedule | stub |
+| 07 | Theme, assets and data sheets | done |
+| 08 | Dashboard and charts | done |
+| 09 | Service, CLI and FastAPI | service + CLI + prompts done; API stub; discovery_reader stub |
+| 10 | Packaging, CI, end-to-end tests and docs | spec, build scripts, GitHub Actions, docs done; Docker later |
+
+## 5. The numbers
+
+See `docs/METHODOLOGY.md`. Thresholds: Compatible ≥ 80, Partial ≥ 50 (settings
+`readiness_compatible_min`, `readiness_partial_min`); occurrence cap 10. Effort-point weights
+on Totals are editable in the workbook (heuristic, not hours).
+
+## 6. Workbook
+
+| Sheet | Visible | Holds | Values from |
+|---|---|---|---|
+| Discovery | yes | nav, 16 KPI tiles, scan summary, 3 charts | `='Totals'!…` only |
+| Assets | yes | one row per assessable object + readiness | assessment |
+| Findings | yes | one row per (asset, feature) + guidance | assessment + catalog |
+| Notebooks … Identities (31 sheets) | yes | one row per Databricks object | parser |
+| Warnings | yes | unreadable endpoints / files, catalog misses | collector, reader, estimation |
+| Information | yes | how to read, what was scanned, limits | static + ScanInfo |
+| Totals | yes | all totals, readiness by type, findings by rule, effort weights | live formulas |
+| ChartReadiness / ChartAssetTypes / ChartTopFindings | hidden | chart series | `='Totals'!…` only |
+
+## 7. Exit codes
+
+| Code | Meaning |
+|---|---|
+| 0 | success |
+| 1 | internal error (bug) |
+| 2 | unsupported file type |
+| 3 | malformed artifact |
+| 4 | unsafe archive |
+| 5 | catalog error |
+| 6 | report write error |
+| 7 | nothing found |
+| 8 | invalid discovery workbook / snapshot |
+| 9 | database error |
+| 10 | Databricks connection / authentication error |
+| 11 | invalid configuration (missing host / token, bad setting) |
+
+## 8. Working agreements
+
+```
+pip install -e ".[dev]"
+ruff check . && ruff format --check . && mypy dbx_premig tests scripts && pytest
+pytest --run-slow          # LibreOffice recalculation + wheel contents
+```
+- Every change leaves ruff, mypy (strict) and pytest (coverage ≥ 80 %) green.
+- Python >=3.11,<3.14; line length 100; `from __future__ import annotations`; `__all__`.
+- Domain models are frozen. Wire schemas stay separate from domain models.
+- `dbx2fabric_assess (3) 2.py` is the original prototype this tool replaces; its rules now
+  live in `features.yaml`. Keep it only as a reference.
