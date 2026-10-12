@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     """Which live collectors run (``--only``)."""
     catalogs: tuple[str, ...] = ()
     """Limit Unity Catalog collection to these catalogs (empty = all)."""
+    schemas: tuple[str, ...] = ()
+    """Limit Unity Catalog collection to these schemas: ``catalog.schema`` or a bare schema
+    name matched in every collected catalog (empty = all)."""
     skip_catalogs: tuple[str, ...] = ("system", "samples", "__databricks_internal")
     """Catalogs never collected."""
     include_hive_metastore: bool = True

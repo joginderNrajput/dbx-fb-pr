@@ -47,6 +47,7 @@ python discovery.py discover [OPTIONS]
   --save-snapshot         also write the raw capture JSON (contains notebook source)
   --only TEXT             comma list of collectors (python discovery.py collectors)
   --catalogs TEXT         comma list of Unity Catalog catalogs
+  --schemas TEXT          comma list of schemas (catalog.schema or schema)
   --skip-repos --no-columns --no-view-sql --max-notebooks N --insecure
   -c, --config FILE       settings file (.yaml / .toml); every setting also as DBXF_<NAME>
   -v, --verbose

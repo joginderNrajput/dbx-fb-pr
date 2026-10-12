@@ -120,6 +120,10 @@ def discover(
     catalogs: Annotated[
         str | None, typer.Option(help="Comma list: only these Unity Catalog catalogs.")
     ] = None,
+    schemas: Annotated[
+        str | None,
+        typer.Option(help="Comma list: only these schemas (catalog.schema or schema)."),
+    ] = None,
     skip_repos: Annotated[bool, typer.Option("--skip-repos", help="Skip /Repos.")] = False,
     no_columns: Annotated[
         bool, typer.Option("--no-columns", help="Leave out the Columns sheet.")
@@ -149,6 +153,7 @@ def discover(
             "profile": profile,
             "collectors": _split(only),
             "catalogs": _split(catalogs),
+            "schemas": _split(schemas),
             "max_notebooks": max_notebooks,
         }
         if skip_repos:

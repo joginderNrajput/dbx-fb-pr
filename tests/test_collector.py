@@ -68,6 +68,22 @@ def test_only_and_catalog_filter() -> None:
     assert {c["name"] for c in snap.sections["catalogs"]} == {"main"}
 
 
+def test_schema_filter() -> None:
+    snap, _s, _ = _collect(
+        FakeWorkspace.from_fixture(),
+        collectors=("unity_catalog", "functions", "grants", "models"),
+        catalogs=("main",),
+        schemas=("main.sales",),
+    )
+    assert {s["name"] for s in snap.sections["schemas"]} == {"sales"}
+    assert {t["schema_name"] for t in snap.sections["tables"]} == {"sales"}
+    assert [f["name"] for f in snap.sections["functions"]] == ["score"]
+    assert {g["securable"] for g in snap.sections["grants"]} == {"main", "main.sales"}
+    assert [m.get("full_name") for m in snap.sections["models"] if "_registry" not in m] == [
+        "main.sales.churn"
+    ]
+
+
 def test_notebook_cap() -> None:
     snap, _s, _ = _collect(FakeWorkspace.from_fixture(), collectors=("notebooks",), max_notebooks=2)
     scanned = [n for n in snap.sections["notebooks"] if n.get("source")]

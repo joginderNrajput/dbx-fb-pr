@@ -151,6 +151,7 @@ Useful knobs for large workspaces:
 | Flag | Effect |
 |---|---|
 | `--catalogs main,sales` | only these Unity Catalog catalogs |
+| `--schemas main.default` | only these schemas (`catalog.schema` or a bare name) |
 | `--max-notebooks 500` | stop exporting notebook source after 500 |
 | `--skip-repos` | leave out `/Repos` |
 | `--no-columns` | no Columns sheet (very large metastores) |

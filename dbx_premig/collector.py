@@ -73,10 +73,14 @@ class _Run:
                     "unity_catalog", "/api/2.1/unity-catalog/schemas", "schemas", catalog_name=cat
                 ):
                     name = str(sch.get("name", ""))
-                    if name and name != "information_schema":
+                    if name and name != "information_schema" and self.schema_wanted(cat, name):
                         self._uc_schemas.append((cat, name))
                         self.add("schemas", sch)
         return self._uc_schemas
+
+    def schema_wanted(self, catalog: str, schema: str) -> bool:
+        wanted = self.settings.schemas
+        return not wanted or schema in wanted or f"{catalog}.{schema}" in wanted
 
     def uc_catalogs(self) -> list[str]:
         if "catalogs" not in self.sections:
@@ -349,7 +353,7 @@ def _alerts(run: _Run) -> None:
 def _models(run: _Run) -> None:
     for m in run.try_paged("models", "/api/2.1/unity-catalog/models", "registered_models"):
         cat = str(m.get("catalog_name") or str(m.get("full_name", "")).split(".")[0])
-        if run._catalog_wanted(cat):
+        if run._catalog_wanted(cat) and run.schema_wanted(cat, str(m.get("schema_name", ""))):
             run.add("models", m)
     for m in run.try_paged(
         "models", "/api/2.0/mlflow/registered-models/search", "registered_models", max_results=1000
