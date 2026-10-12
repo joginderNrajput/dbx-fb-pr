@@ -35,7 +35,8 @@ _BAND_ROW_HEIGHTS = {1: 24.0, 2: 24.0, 3: 20.0, 4: 10.0, 5: 18.0}
 _MIN_BAND_PX = 1500
 _LOGO_SIZE = (200, 45)  # Kanerika logo, px
 _PLATFORM_LOGO_SIZE = (234, 46)  # Databricks -> Fabric strip, px
-_TITLE_X = 250  # px from the left edge: clear of the Kanerika logo
+_LOGO_X, _LOGO_Y = 14, 15  # px: Kanerika logo position (as in the reference workbook)
+_TITLE_X = _LOGO_X + 200 + 36  # px from the left edge: clear of the Kanerika logo
 
 
 def column_px(ws: Worksheet, index: int) -> int:
@@ -74,7 +75,31 @@ def title_asset(sheet: str) -> str:
     return f"titles/{sheet}.png"
 
 
-def _title_overlay(ws: Worksheet, sheet: str) -> None:
+def anchor_at(ws: Worksheet, x_px: int) -> tuple[int, int]:
+    """(0-based column, pixel offset inside it) for a horizontal position on the sheet.
+
+    Excel caps a picture's column offset at that column's width, so an offset must never be
+    larger than its column: a picture placed "250 px into column A" on a sheet whose column A
+    is 130 px wide would otherwise slide left (onto the Kanerika logo).
+    """
+    col, start = 0, 0
+    while True:
+        width = column_px(ws, col + 1)
+        if x_px < start + width:
+            return col, x_px - start
+        start += width
+        col += 1
+
+
+def _one_cell(x_px: int, y_px: int, size: tuple[int, int], ws: Worksheet) -> OneCellAnchor:
+    col, off = anchor_at(ws, x_px)
+    return OneCellAnchor(
+        _from=AnchorMarker(col=col, colOff=pixels_to_EMU(off), row=0, rowOff=pixels_to_EMU(y_px)),
+        ext=XDRPositiveSize2D(pixels_to_EMU(size[0]), pixels_to_EMU(size[1])),
+    )
+
+
+def _title_overlay(ws: Worksheet, sheet: str, max_right_px: int) -> None:
     """White title text as a transparent image on top of the banner.
 
     Cell text would sit *under* the banner picture, so the title is pre-rendered at 2x
@@ -84,12 +109,14 @@ def _title_overlay(ws: Worksheet, sheet: str) -> None:
     if not path.is_file():
         return
     img = XLImage(str(path))
-    size = (int(img.width) // 2, int(img.height) // 2)
-    img.width, img.height = size
-    img.anchor = OneCellAnchor(
-        _from=AnchorMarker(col=0, colOff=pixels_to_EMU(_TITLE_X), row=0, rowOff=pixels_to_EMU(22)),
-        ext=XDRPositiveSize2D(pixels_to_EMU(size[0]), pixels_to_EMU(size[1])),
-    )
+    width, height = int(img.width) // 2, int(img.height) // 2
+    room = max_right_px - _TITLE_X
+    if width > room > 0:  # never run into the platform logo: shrink, keep the aspect ratio
+        width, height = room, max(1, height * room // width)
+    img.width, img.height = width, height
+    # Vertically centred on the Kanerika logo.
+    y = _LOGO_Y + (_LOGO_SIZE[1] - height) // 2
+    img.anchor = _one_cell(_TITLE_X, y, (width, height), ws)
     ws.add_image(img)
 
 
@@ -118,32 +145,17 @@ def branding_band(ws: Worksheet, title: str, last_col: int, title_key: str | Non
     ws.add_image(banner)
 
     logo = _image("kanerika_logo.png", _LOGO_SIZE)
-    logo.anchor = OneCellAnchor(
-        _from=AnchorMarker(col=0, colOff=pixels_to_EMU(14), row=0, rowOff=pixels_to_EMU(15)),
-        ext=XDRPositiveSize2D(pixels_to_EMU(_LOGO_SIZE[0]), pixels_to_EMU(_LOGO_SIZE[1])),
-    )
+    logo.anchor = _one_cell(_LOGO_X, _LOGO_Y, _LOGO_SIZE, ws)
     ws.add_image(logo)
 
     # Platform logo: right-aligned inside the banner (generous margin: renderers differ in
     # how wide a column is).
-    need = _PLATFORM_LOGO_SIZE[0] + 48
-    acc, start = 0, col
-    while start > 1 and acc < need:
-        start -= 1
-        acc += column_px(ws, start + 1)
-    offset = max(0, acc - need)
+    platform_x = max(_TITLE_X, span - _PLATFORM_LOGO_SIZE[0] - 48)
     platform = _image("platform_logo.png", _PLATFORM_LOGO_SIZE)
-    platform.anchor = OneCellAnchor(
-        _from=AnchorMarker(
-            col=start, colOff=pixels_to_EMU(offset), row=0, rowOff=pixels_to_EMU(15)
-        ),
-        ext=XDRPositiveSize2D(
-            pixels_to_EMU(_PLATFORM_LOGO_SIZE[0]), pixels_to_EMU(_PLATFORM_LOGO_SIZE[1])
-        ),
-    )
+    platform.anchor = _one_cell(platform_x, _LOGO_Y, _PLATFORM_LOGO_SIZE, ws)
     ws.add_image(platform)
 
-    _title_overlay(ws, title_key)
+    _title_overlay(ws, title_key, platform_x - 24)
 
     # Title text in a cell too (searchable, read by screen readers; the banner covers it).
     acc, title_col = 0, 1

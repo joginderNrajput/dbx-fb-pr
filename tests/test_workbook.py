@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from openpyxl import load_workbook
@@ -210,3 +211,43 @@ def test_totals_recalculate_to_python_summary(
         if isinstance(c.value, str) and c.value.startswith(("#REF", "#VALUE", "#NAME", "#DIV"))
     ]
     assert not errors
+
+
+def _anchors(ws: Any) -> list[tuple[str, int, int, int, int]]:
+    """(image, left px, top px, width px, height px) of each one-cell picture."""
+    from openpyxl.utils.units import EMU_to_pixels
+
+    from dbx_premig.excel.layout import column_px
+
+    out = []
+    for img in ws._images:
+        a = img.anchor
+        if type(a).__name__ != "OneCellAnchor":
+            continue
+        col, off = a._from.col, EMU_to_pixels(a._from.colOff)
+        # Excel caps the offset at the column width: it must fit inside its column.
+        assert off < column_px(ws, col + 1), f"{ws.title}: offset {off}px > column {col}"
+        left = sum(column_px(ws, c) for c in range(1, col + 1)) + off
+        out.append((img.ref if isinstance(img.ref, str) else "", left,
+                    EMU_to_pixels(a._from.rowOff), EMU_to_pixels(a.ext.width),
+                    EMU_to_pixels(a.ext.height)))  # fmt: skip
+    return out
+
+
+def test_banner_pictures_never_overlap(wb: Workbook, report: DiscoveryReport,
+                                       settings: Settings, tmp_path: Path) -> None:  # fmt: skip
+    """Kanerika logo, sheet title and platform logo sit side by side on every sheet."""
+    from dbx_premig.service import run_assessment
+
+    discovery = write_discovery_workbook(report, tmp_path / "d.xlsx", settings)
+    assessed = load_workbook(
+        run_assessment(settings, discovery_workbook=discovery, output_dir=tmp_path).workbook
+    )
+    for book in (wb, assessed):
+        for ws in book.worksheets:
+            if ws.sheet_state == "hidden":
+                continue
+            boxes = sorted(_anchors(ws), key=lambda b: b[1])
+            assert len(boxes) == 3, ws.title  # logo, title, platform logo
+            for (_, l1, _, w1, _), (_, l2, _, _, _) in itertools.pairwise(boxes):
+                assert l1 + w1 <= l2, f"{ws.title}: banner pictures overlap"
