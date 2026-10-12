@@ -1,0 +1,861 @@
+{
+ "format_version": 1,
+ "tool_version": "0.1.0",
+ "mode": "live",
+ "source": "https://adb-1234567890123456.7.azuredatabricks.net",
+ "captured_at": "2026-10-01T09:00:00+00:00",
+ "meta": {
+  "cloud": "Azure",
+  "metastore": "metastore_westeurope",
+  "metastore_id": "11111111-2222",
+  "region": "westeurope",
+  "collected_by": "ana@contoso.com",
+  "collectors": [
+   "workspace",
+   "notebooks",
+   "repos",
+   "jobs",
+   "pipelines",
+   "clusters",
+   "instance_pools",
+   "cluster_policies",
+   "warehouses",
+   "unity_catalog",
+   "functions",
+   "grants",
+   "queries",
+   "dashboards",
+   "alerts",
+   "models",
+   "serving_endpoints",
+   "experiments",
+   "libraries",
+   "secrets",
+   "mounts",
+   "identities"
+  ]
+ },
+ "sections": {
+  "notebooks": [
+   {
+    "path": "/Workspace/Shared/etl/ingest_orders",
+    "object_type": "NOTEBOOK",
+    "language": "PYTHON",
+    "modified_at": 1700000000000,
+    "size": null,
+    "origin": "workspace",
+    "source": "# Databricks notebook source\n# MAGIC %md\n# MAGIC # Ingest orders (sample fixture)\n\n# COMMAND ----------\n\ndbutils.widgets.text(\"run_date\", \"\")\nrun_date = dbutils.widgets.get(\"run_date\")\nkey = dbutils.secrets.get(scope=\"kv-sales\", key=\"storage-key\")\nspark.conf.set(\"fs.azure.account.key.salesdl.dfs.core.windows.net\", key)\n\n# COMMAND ----------\n\ndf = (spark.readStream.format(\"cloudFiles\")\n      .option(\"cloudFiles.format\", \"json\")\n      .load(\"/mnt/raw/orders\"))\n\n# COMMAND ----------\n\n# MAGIC %run ./helpers\n\n# COMMAND ----------\n\ndf.writeStream.toTable(\"main.sales.orders_bronze\")\n"
+   },
+   {
+    "path": "/Shared/etl/helpers",
+    "object_type": "NOTEBOOK",
+    "language": "PYTHON",
+    "modified_at": 1700000000000,
+    "size": null,
+    "origin": "workspace",
+    "source": "# Databricks notebook source\ndef clean(df):\n    return df.dropDuplicates()\n\n# COMMAND ----------\n\nspark.sql(\"SELECT * FROM main.sales.orders_bronze LIMIT 10\")\n"
+   },
+   {
+    "path": "/Shared/etl/report",
+    "object_type": "NOTEBOOK",
+    "language": "SQL",
+    "modified_at": 1700000000000,
+    "size": null,
+    "origin": "workspace",
+    "source": "-- Databricks notebook source\nCREATE OR REPLACE VIEW main.sales.v_orders AS\nSELECT o.*, c.name FROM main.sales.orders o JOIN main.crm.customers c ON o.cid = c.id;\n\n-- COMMAND ----------\n\nOPTIMIZE main.sales.orders ZORDER BY (order_date);\n"
+   },
+   {
+    "path": "/Users/ana@contoso.com/scala_job",
+    "object_type": "NOTEBOOK",
+    "language": "SCALA",
+    "modified_at": 1700000000000,
+    "size": null,
+    "origin": "workspace",
+    "source": "// Databricks notebook source\nval df = spark.read.format(\"delta\").load(\"dbfs:/FileStore/tables/x\")\ndisplay(df)\n"
+   },
+   {
+    "path": "/Repos/ana@contoso.com/ml/train_model",
+    "object_type": "NOTEBOOK",
+    "language": "PYTHON",
+    "modified_at": 1700000000000,
+    "size": null,
+    "origin": "workspace",
+    "source": "import mlflow\nfrom databricks.feature_store import FeatureStoreClient\n"
+   },
+   {
+    "path": "/Shared/huge_notebook",
+    "object_type": "NOTEBOOK",
+    "language": "PYTHON",
+    "modified_at": 1700000000000,
+    "size": 9000000,
+    "origin": "workspace",
+    "source": null,
+    "skipped_reason": "larger than 5000000 bytes"
+   }
+  ],
+  "repos": [
+   {
+    "id": 101,
+    "path": "/Repos/ana@contoso.com/ml",
+    "url": "https://dev.azure.com/contoso/ml/_git/ml",
+    "provider": "azureDevOpsServices",
+    "branch": "main"
+   }
+  ],
+  "jobs": [
+   {
+    "job_id": 11,
+    "creator_user_name": "ana@contoso.com",
+    "created_time": 1700000000000,
+    "settings": {
+     "name": "Daily orders",
+     "max_concurrent_runs": 1,
+     "schedule": {
+      "quartz_cron_expression": "0 0 6 * * ?",
+      "timezone_id": "Europe/London",
+      "pause_status": "UNPAUSED"
+     },
+     "email_notifications": {
+      "on_failure": [
+       "ops@contoso.com"
+      ]
+     },
+     "job_clusters": [
+      {
+       "job_cluster_key": "etl",
+       "new_cluster": {
+        "spark_version": "13.3.x-scala2.12",
+        "init_scripts": [
+         {
+          "workspace": {
+           "destination": "/Shared/init.sh"
+          }
+         }
+        ]
+       }
+      }
+     ],
+     "tasks": [
+      {
+       "task_key": "ingest",
+       "notebook_task": {
+        "notebook_path": "/Shared/etl/ingest_orders"
+       },
+       "job_cluster_key": "etl",
+       "libraries": [
+        {
+         "pypi": {
+          "package": "great-expectations"
+         }
+        }
+       ]
+      },
+      {
+       "task_key": "report",
+       "depends_on": [
+        {
+         "task_key": "ingest"
+        }
+       ],
+       "sql_task": {
+        "query": {
+         "query_id": "q-1"
+        },
+        "warehouse_id": "wh-1"
+       }
+      },
+      {
+       "task_key": "dlt",
+       "depends_on": [
+        {
+         "task_key": "ingest"
+        }
+       ],
+       "pipeline_task": {
+        "pipeline_id": "p-1"
+       }
+      }
+     ]
+    }
+   },
+   {
+    "job_id": 12,
+    "creator_user_name": "bob@contoso.com",
+    "created_time": 1700000000000,
+    "settings": {
+     "name": "Wheel runner",
+     "continuous": {
+      "pause_status": "UNPAUSED"
+     },
+     "tasks": [
+      {
+       "task_key": "main",
+       "python_wheel_task": {
+        "package_name": "contoso_etl",
+        "entry_point": "run"
+       },
+       "existing_cluster_id": "0101-abc"
+      },
+      {
+       "task_key": "next",
+       "run_job_task": {
+        "job_id": 11
+       }
+      },
+      {
+       "task_key": "mystery",
+       "new_magic_task": {
+        "x": 1
+       }
+      }
+     ]
+    }
+   },
+   {
+    "job_id": 13,
+    "settings": {
+     "name": "File trigger",
+     "trigger": {
+      "file_arrival": {
+       "url": "abfss://in@dl.dfs.core.windows.net/"
+      },
+      "pause_status": "UNPAUSED"
+     },
+     "tasks": [
+      {
+       "task_key": "t",
+       "notebook_task": {
+        "notebook_path": "/Shared/etl/missing_notebook"
+       }
+      }
+     ]
+    }
+   }
+  ],
+  "pipelines": [
+   {
+    "pipeline_id": "p-1",
+    "name": "orders_dlt",
+    "state": "IDLE",
+    "creator_user_name": "ana@contoso.com",
+    "spec": {
+     "id": "p-1",
+     "catalog": "main",
+     "target": "sales",
+     "edition": "ADVANCED",
+     "continuous": false,
+     "serverless": true,
+     "photon": true,
+     "development": false,
+     "channel": "CURRENT",
+     "libraries": [
+      {
+       "notebook": {
+        "path": "/Shared/etl/report"
+       }
+      }
+     ]
+    }
+   }
+  ],
+  "clusters": [
+   {
+    "cluster_id": "0101-abc",
+    "cluster_name": "Shared ETL",
+    "cluster_source": "UI",
+    "state": "TERMINATED",
+    "spark_version": "10.4.x-scala2.12",
+    "node_type_id": "Standard_DS3_v2",
+    "autoscale": {
+     "min_workers": 2,
+     "max_workers": 8
+    },
+    "autotermination_minutes": 60,
+    "data_security_mode": "USER_ISOLATION",
+    "runtime_engine": "STANDARD",
+    "init_scripts": [
+     {
+      "workspace": {
+       "destination": "/Shared/init.sh"
+      }
+     }
+    ],
+    "spark_conf": {
+     "spark.databricks.delta.preview.enabled": "true",
+     "spark.sql.shuffle.partitions": "200"
+    },
+    "custom_tags": {
+     "team": "data"
+    },
+    "creator_user_name": "ana@contoso.com"
+   },
+   {
+    "cluster_id": "0202-gpu",
+    "cluster_name": "ML GPU",
+    "cluster_source": "UI",
+    "state": "RUNNING",
+    "spark_version": "14.3.x-gpu-ml-scala2.12",
+    "node_type_id": "Standard_NC6s_v3",
+    "num_workers": 1,
+    "autotermination_minutes": 30,
+    "data_security_mode": "SINGLE_USER",
+    "runtime_engine": "PHOTON",
+    "docker_image": {
+     "url": "contoso/ml:1"
+    },
+    "creator_user_name": "bob@contoso.com"
+   },
+   {
+    "cluster_id": "job-1",
+    "cluster_name": "job-11-run-1",
+    "cluster_source": "JOB",
+    "spark_version": "13.3.x-scala2.12"
+   }
+  ],
+  "instance_pools": [
+   {
+    "instance_pool_id": "pool-1",
+    "instance_pool_name": "Fast pool",
+    "node_type_id": "Standard_DS3_v2",
+    "min_idle_instances": 1,
+    "max_capacity": 10,
+    "idle_instance_autotermination_minutes": 15,
+    "preloaded_spark_versions": [
+     "13.3.x-scala2.12"
+    ],
+    "state": "ACTIVE"
+   }
+  ],
+  "cluster_policies": [
+   {
+    "policy_id": "pol-1",
+    "name": "Small clusters",
+    "definition": "{\"autotermination_minutes\": {\"type\": \"fixed\", \"value\": 30}, \"num_workers\": {\"type\": \"range\", \"maxValue\": 4}}",
+    "creator_user_name": "admin@contoso.com",
+    "created_at_timestamp": 1700000000000
+   }
+  ],
+  "warehouses": [
+   {
+    "id": "wh-1",
+    "name": "BI warehouse",
+    "cluster_size": "Small",
+    "warehouse_type": "PRO",
+    "enable_serverless_compute": true,
+    "min_num_clusters": 1,
+    "max_num_clusters": 2,
+    "auto_stop_mins": 10,
+    "enable_photon": true,
+    "channel": {
+     "name": "CHANNEL_NAME_CURRENT"
+    },
+    "state": "STOPPED",
+    "creator_name": "admin@contoso.com"
+   }
+  ],
+  "catalogs": [
+   {
+    "name": "main",
+    "catalog_type": "MANAGED_CATALOG",
+    "owner": "admins",
+    "storage_root": "abfss://uc@dl.dfs.core.windows.net/main",
+    "isolation_mode": "OPEN",
+    "created_at": 1700000000000
+   },
+   {
+    "name": "hive_metastore",
+    "catalog_type": "HIVE_METASTORE_CATALOG",
+    "owner": "",
+    "created_at": 1700000000000
+   }
+  ],
+  "schemas": [
+   {
+    "catalog_name": "main",
+    "name": "sales",
+    "full_name": "main.sales",
+    "owner": "admins",
+    "created_at": 1700000000000
+   },
+   {
+    "catalog_name": "main",
+    "name": "crm",
+    "full_name": "main.crm",
+    "owner": "admins",
+    "created_at": 1700000000000
+   },
+   {
+    "catalog_name": "main",
+    "name": "sec",
+    "full_name": "main.sec",
+    "owner": "security",
+    "created_at": 1700000000000
+   },
+   {
+    "catalog_name": "hive_metastore",
+    "name": "default",
+    "full_name": "hive_metastore.default",
+    "owner": "",
+    "created_at": 1700000000000
+   }
+  ],
+  "tables": [
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "orders",
+    "table_type": "MANAGED",
+    "data_source_format": "DELTA",
+    "storage_location": "abfss://uc@dl.dfs.core.windows.net/main/sales/orders",
+    "owner": "ana@contoso.com",
+    "created_at": 1700000000000,
+    "updated_at": 1700000000000,
+    "properties": {
+     "delta.enableChangeDataFeed": "true",
+     "delta.enableDeletionVectors": "true"
+    },
+    "columns": [
+     {
+      "name": "order_id",
+      "type_text": "bigint",
+      "type_name": "BIGINT",
+      "position": 0,
+      "nullable": true
+     },
+     {
+      "name": "order_date",
+      "type_text": "date",
+      "type_name": "DATE",
+      "position": 1,
+      "nullable": true,
+      "partition_index": 0
+     },
+     {
+      "name": "payload",
+      "type_text": "variant",
+      "type_name": "VARIANT",
+      "position": 2,
+      "nullable": true
+     },
+     {
+      "name": "email",
+      "type_text": "string",
+      "type_name": "STRING",
+      "position": 3,
+      "nullable": true,
+      "mask": {
+       "function_name": "main.sec.mask_email"
+      }
+     }
+    ]
+   },
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "v_orders",
+    "table_type": "VIEW",
+    "owner": "ana@contoso.com",
+    "created_at": 1700000000000,
+    "view_definition": "SELECT o.*, c.name FROM main.sales.orders o JOIN main.crm.customers c ON o.cid = c.id",
+    "columns": [
+     {
+      "name": "order_id",
+      "type_text": "bigint",
+      "type_name": "BIGINT",
+      "position": 0,
+      "nullable": true
+     },
+     {
+      "name": "name",
+      "type_text": "string",
+      "type_name": "STRING",
+      "position": 1,
+      "nullable": true
+     }
+    ]
+   },
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "orders_mv",
+    "table_type": "MATERIALIZED_VIEW",
+    "owner": "ana@contoso.com",
+    "view_definition": "SELECT order_date, count(*) c FROM main.sales.orders GROUP BY 1",
+    "columns": [
+     {
+      "name": "order_date",
+      "type_text": "date",
+      "type_name": "DATE",
+      "position": 0,
+      "nullable": true
+     },
+     {
+      "name": "c",
+      "type_text": "bigint",
+      "type_name": "BIGINT",
+      "position": 1,
+      "nullable": true
+     }
+    ]
+   },
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "orders_stream",
+    "table_type": "STREAMING_TABLE",
+    "data_source_format": "DELTA",
+    "columns": [
+     {
+      "name": "order_id",
+      "type_text": "bigint",
+      "type_name": "BIGINT",
+      "position": 0,
+      "nullable": true
+     }
+    ]
+   },
+   {
+    "catalog_name": "main",
+    "schema_name": "crm",
+    "name": "customers",
+    "table_type": "EXTERNAL",
+    "data_source_format": "PARQUET",
+    "storage_location": "abfss://ext@dl.dfs.core.windows.net/crm/customers",
+    "row_filter": {
+     "function_name": "main.sec.region_filter"
+    },
+    "columns": [
+     {
+      "name": "id",
+      "type_text": "bigint",
+      "type_name": "BIGINT",
+      "position": 0,
+      "nullable": true
+     },
+     {
+      "name": "name",
+      "type_text": "string",
+      "type_name": "STRING",
+      "position": 1,
+      "nullable": true
+     }
+    ]
+   },
+   {
+    "catalog_name": "hive_metastore",
+    "schema_name": "default",
+    "name": "legacy_events",
+    "table_type": "MANAGED",
+    "data_source_format": "DELTA",
+    "columns": [
+     {
+      "name": "id",
+      "type_text": "int",
+      "type_name": "INT",
+      "position": 0,
+      "nullable": true
+     }
+    ]
+   }
+  ],
+  "volumes": [
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "landing",
+    "full_name": "main.sales.landing",
+    "volume_type": "EXTERNAL",
+    "storage_location": "abfss://landing@dl.dfs.core.windows.net/",
+    "owner": "ana@contoso.com"
+   }
+  ],
+  "external_locations": [
+   {
+    "name": "landing",
+    "url": "abfss://landing@dl.dfs.core.windows.net/",
+    "credential_name": "dl-cred",
+    "read_only": false,
+    "owner": "admins"
+   },
+   {
+    "name": "__databricks_managed",
+    "url": "abfss://managed@x/"
+   }
+  ],
+  "storage_credentials": [
+   {
+    "name": "dl-cred",
+    "azure_managed_identity": {
+     "access_connector_id": "/subscriptions/x"
+    },
+    "owner": "admins",
+    "read_only": false
+   }
+  ],
+  "connections": [
+   {
+    "name": "sqlserver_erp",
+    "connection_type": "SQLSERVER",
+    "owner": "admins",
+    "read_only": true,
+    "created_at": 1700000000000
+   }
+  ],
+  "functions": [
+   {
+    "catalog_name": "main",
+    "schema_name": "sec",
+    "name": "mask_email",
+    "full_name": "main.sec.mask_email",
+    "routine_body": "SQL",
+    "data_type": "STRING",
+    "full_data_type": "STRING",
+    "routine_definition": "CASE WHEN is_member('pii') THEN email ELSE '***' END",
+    "input_params": {
+     "parameters": [
+      {
+       "name": "email",
+       "type_text": "string"
+      }
+     ]
+    }
+   },
+   {
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "score",
+    "full_name": "main.sales.score",
+    "routine_body": "EXTERNAL",
+    "external_language": "PYTHON",
+    "data_type": "DOUBLE",
+    "routine_definition": "import mlflow\nreturn 1.0",
+    "input_params": {
+     "parameters": [
+      {
+       "name": "x",
+       "type_text": "double"
+      }
+     ]
+    }
+   }
+  ],
+  "grants": [
+   {
+    "securable_type": "catalog",
+    "securable": "main",
+    "principal": "data-engineers",
+    "privileges": [
+     "USE_CATALOG",
+     "CREATE_SCHEMA"
+    ]
+   },
+   {
+    "securable_type": "schema",
+    "securable": "main.sales",
+    "principal": "analysts",
+    "privileges": [
+     "SELECT",
+     "USE_SCHEMA"
+    ]
+   }
+  ],
+  "queries": [
+   {
+    "id": "q-1",
+    "display_name": "Orders by day",
+    "owner_user_name": "ana@contoso.com",
+    "warehouse_id": "wh-1",
+    "update_time": "2026-09-01T10:00:00Z",
+    "query_text": "SELECT order_date, count(*) FROM main.sales.orders\nGROUP BY 1"
+   },
+   {
+    "id": "q-2",
+    "display_name": "AI summary",
+    "owner_user_name": "bob@contoso.com",
+    "warehouse_id": "wh-1",
+    "query_text": "SELECT ai_summarize(notes) FROM main.crm.customers"
+   }
+  ],
+  "dashboards": [
+   {
+    "dashboard_id": "d-1",
+    "display_name": "Sales overview",
+    "path": "/Shared/Sales overview.lvdash.json",
+    "warehouse_id": "wh-1",
+    "lifecycle_state": "ACTIVE",
+    "create_time": "2026-01-01T00:00:00Z",
+    "update_time": "2026-09-01T00:00:00Z",
+    "_kind": "AI/BI (Lakeview)"
+   },
+   {
+    "id": "ld-1",
+    "name": "Legacy KPIs",
+    "created_at": "2024-01-01T00:00:00Z",
+    "_kind": "Legacy SQL"
+   }
+  ],
+  "alerts": [
+   {
+    "id": "a-1",
+    "display_name": "Orders drop",
+    "query_id": "q-1",
+    "state": "OK",
+    "owner_user_name": "ana@contoso.com"
+   }
+  ],
+  "models": [
+   {
+    "full_name": "main.sales.churn",
+    "catalog_name": "main",
+    "schema_name": "sales",
+    "name": "churn",
+    "owner": "bob@contoso.com",
+    "created_at": 1700000000000,
+    "updated_at": 1700000000000
+   },
+   {
+    "name": "legacy_model",
+    "user_id": "bob@contoso.com",
+    "creation_timestamp": 1700000000000,
+    "_registry": "workspace"
+   }
+  ],
+  "serving_endpoints": [
+   {
+    "name": "churn-endpoint",
+    "state": {
+     "ready": "READY"
+    },
+    "task": "",
+    "creator": "bob@contoso.com",
+    "config": {
+     "served_entities": [
+      {
+       "entity_name": "main.sales.churn"
+      }
+     ]
+    }
+   },
+   {
+    "name": "databricks-meta-llama",
+    "state": {
+     "ready": "READY"
+    }
+   }
+  ],
+  "experiments": [
+   {
+    "experiment_id": "e-1",
+    "name": "/Users/bob@contoso.com/churn",
+    "lifecycle_stage": "active",
+    "last_update_time": 1700000000000
+   }
+  ],
+  "library_statuses": [
+   {
+    "cluster_id": "0101-abc",
+    "library_statuses": [
+     {
+      "library": {
+       "pypi": {
+        "package": "great-expectations==0.18"
+       }
+      }
+     },
+     {
+      "library": {
+       "maven": {
+        "coordinates": "com.microsoft.azure:spark-mssql-connector:1.0.2"
+       }
+      }
+     },
+     {
+      "library": {
+       "egg": "dbfs:/libs/old.egg"
+      }
+     }
+    ]
+   },
+   {
+    "cluster_id": "0202-gpu",
+    "library_statuses": [
+     {
+      "library": {
+       "pypi": {
+        "package": "great-expectations==0.18"
+       }
+      }
+     },
+     {
+      "library": {
+       "whl": "/Volumes/main/sales/landing/contoso_etl-1.0-py3-none-any.whl"
+      }
+     }
+    ]
+   }
+  ],
+  "secret_scopes": [
+   {
+    "name": "kv-sales",
+    "backend_type": "AZURE_KEYVAULT",
+    "keys": [
+     "storage-key",
+     "sql-password"
+    ]
+   },
+   {
+    "name": "local",
+    "backend_type": "DATABRICKS",
+    "keys": []
+   }
+  ],
+  "mounts": [
+   {
+    "path": "/mnt/raw"
+   }
+  ],
+  "users": [
+   {
+    "id": "u1",
+    "userName": "ana@contoso.com",
+    "active": true,
+    "groups": [
+     {
+      "value": "g1"
+     }
+    ]
+   },
+   {
+    "id": "u2",
+    "userName": "bob@contoso.com",
+    "active": false,
+    "groups": []
+   }
+  ],
+  "groups": [
+   {
+    "id": "g1",
+    "displayName": "data-engineers",
+    "members": [
+     {
+      "value": "u1"
+     }
+    ]
+   }
+  ],
+  "service_principals": [
+   {
+    "id": "sp1",
+    "applicationId": "0000-1111",
+    "displayName": "etl-sp",
+    "active": true
+   }
+  ]
+ },
+ "warnings": [
+  {
+   "source": "identities",
+   "message": "Could not read /api/2.0/preview/scim/v2/Groups (HTTP 403)."
+  }
+ ]
+}

@@ -1,0 +1,86 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dbx-premig"
+version = "0.1.0"
+description = "Databricks -> Microsoft Fabric pre-migration discovery accelerator (Kanerika)"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+license = { text = "Proprietary" }
+authors = [{ name = "Kanerika" }]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "openpyxl>=3.1",
+    "pillow>=10.0",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "PyYAML>=6.0",
+    "rich>=13.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.5",
+    "mypy>=1.10",
+    "pyinstaller>=6.5",
+    "types-PyYAML>=6.0",
+    "cairosvg>=2.7",
+]
+
+[project.scripts]
+dbx-premig = "dbx_premig.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dbx_premig"]
+
+[tool.hatch.build.targets.sdist]
+include = ["dbx_premig", "discovery.py", "README.md", "pyproject.toml"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["dbx2fabric_assess (3) 2.py", "packaging/*.spec", "tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "C4", "SIM", "RUF"]
+ignore = ["B008", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dbx_premig"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+disallow_any_generics = true
+no_implicit_reexport = true
+plugins = ["pydantic.mypy"]
+exclude = ["^build/", "^dist/", "^packaging/.*\\.spec$", "^tests/fixtures/"]
+
+[[tool.mypy.overrides]]
+module = ["openpyxl.*", "cairosvg.*", "PIL.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers --strict-config --cov=dbx_premig --cov-report=term-missing:skip-covered --cov-fail-under=80"
+filterwarnings = ["error", "ignore::DeprecationWarning:openpyxl.*"]
+markers = [
+    "slow: long-running tests (deselect with -m 'not slow')",
+    "integration: needs a real Databricks workspace (DBXF_IT_HOST / DBXF_IT_TOKEN)",
+    "database: needs the optional Postgres sink",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["dbx_premig"]
+omit = ["dbx_premig/__main__.py", "dbx_premig/db/*", "dbx_premig/api/*"]

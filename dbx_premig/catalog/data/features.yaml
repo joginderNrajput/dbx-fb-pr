@@ -1,0 +1,679 @@
+# Databricks feature -> Microsoft Fabric support catalog.
+#
+# This file is DATA, not code. It is the knowledge base the discovery uses to classify
+# readiness. Edit it (or add entries) to tune the tool; `dbx-premig catalog-info` validates it.
+#
+# features[]:
+#   id        unique id, referenced by the parser (structural ids) or matched by `pattern`
+#   category  grouping shown on the Findings sheet
+#   applies   which assets the pattern is run against: code (notebooks, queries, views,
+#             functions, alerts) or "structural" (emitted by the parser from metadata)
+#   pattern   (code features only) case-insensitive, multi-line regular expression
+#   penalty   points taken off the asset's 100-point readiness score
+#   support   supported | partial | manual | unsupported   (unsupported => Unsupported asset)
+#   guidance  what to do in Fabric
+#
+# Penalties and verdicts are this tool's heuristics, not an industry standard.
+version: 1
+
+asset_targets:
+  Notebook: Fabric Notebook
+  Job: Fabric Data Factory pipeline
+  Cluster: Fabric Environment + Spark pool
+  SQL Warehouse: Fabric Warehouse / Lakehouse SQL analytics endpoint
+  DLT Pipeline: Materialized Lake Views / Spark jobs (redesign)
+  Table: Lakehouse Delta table / OneLake shortcut / Mirrored Azure Databricks catalog
+  View: Lakehouse view / Warehouse view (translate)
+  Materialized View: Fabric Materialized Lake View
+  Streaming Table: Spark Structured Streaming job / Eventstream
+  Volume: Lakehouse Files / OneLake shortcut
+  External Location: OneLake shortcut (ADLS Gen2 / S3 / GCS)
+  Storage Credential: Fabric workspace identity / Entra service principal
+  Connection: Fabric connection / on-premises data gateway
+  Function: Warehouse T-SQL function / PySpark function
+  SQL Query: Fabric SQL query / notebook cell
+  Dashboard: Power BI report + semantic model
+  Alert: Fabric Activator / pipeline notification
+  ML Model: Fabric ML model (MLflow)
+  Serving Endpoint: Azure ML / Azure AI Foundry endpoint
+  Library: Fabric Environment library
+  Secret Scope: Azure Key Vault
+  DBFS Mount: OneLake shortcut / abfss:// path
+  Repo: Fabric Git integration (Azure DevOps / GitHub)
+
+job_task_types:
+  notebook_task: { activity: "Pipeline: Notebook activity", feature: null }
+  spark_python_task: { activity: "Spark Job Definition", feature: JOB-SPARK-PYTHON }
+  python_wheel_task: { activity: "Spark Job Definition + Environment wheel", feature: JOB-WHEEL }
+  spark_jar_task: { activity: "Spark Job Definition (JAR)", feature: JOB-JAR }
+  spark_submit_task: { activity: "Spark Job Definition (rewrite)", feature: JOB-SPARK-SUBMIT }
+  sql_task: { activity: "Pipeline: Script / Warehouse activity", feature: JOB-SQL }
+  dbt_task: { activity: "dbt job in Fabric (manual setup)", feature: JOB-DBT }
+  pipeline_task: { activity: "Materialized Lake Views (manual)", feature: JOB-DLT }
+  run_job_task: { activity: "Pipeline: Invoke pipeline", feature: JOB-RUN-JOB }
+  condition_task: { activity: "Pipeline: If Condition", feature: JOB-CONDITION }
+  for_each_task: { activity: "Pipeline: ForEach", feature: JOB-FOR-EACH }
+  clean_rooms_notebook_task: { activity: "No equivalent (clean rooms)", feature: JOB-CLEAN-ROOM }
+  dashboard_task: { activity: "Power BI refresh / subscription", feature: JOB-DASHBOARD }
+  power_bi_task: { activity: "Pipeline: semantic model refresh", feature: null }
+
+features:
+  # ------------------------------------------------------------------ code: dbutils
+  - id: DBU-SECRETS
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.secrets\.'
+    penalty: 8
+    support: partial
+    guidance: Use notebookutils.credentials.getSecret(<Key Vault URL>, <name>); recreate secrets in Azure Key Vault
+  - id: DBU-FS
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.fs\.(?!mount|unmount|mounts)'
+    penalty: 4
+    support: supported
+    guidance: Use notebookutils.fs.* (near 1:1) with abfss:// OneLake paths
+  - id: DBU-MOUNT
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.fs\.(mount|unmount|mounts)\b'
+    penalty: 10
+    support: partial
+    guidance: Mounts are not needed; use OneLake shortcuts or abfss:// paths
+  - id: DBU-WIDGETS
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.widgets\.'
+    penalty: 6
+    support: partial
+    guidance: Replace with a Fabric parameter cell and pipeline parameters
+  - id: DBU-NB-RUN
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.notebook\.(run|exit)'
+    penalty: 4
+    support: supported
+    guidance: Use notebookutils.notebook.run/exit or a pipeline Notebook activity
+  - id: DBU-TASKVALUES
+    category: dbutils
+    applies: code
+    pattern: 'dbutils\.jobs\.taskValues'
+    penalty: 8
+    support: partial
+    guidance: Use notebook exit values and pipeline activity output expressions
+  - id: DBU-CONTEXT
+    category: dbutils
+    applies: code
+    pattern: 'entry_point|getContext\(\)'
+    penalty: 10
+    support: partial
+    guidance: The Databricks context API has no equivalent; use notebookutils.runtime.context
+  - id: PIP-INSTALL
+    category: libraries
+    applies: code
+    pattern: '%pip\s+install|dbutils\.library'
+    penalty: 2
+    support: supported
+    guidance: Move to a Fabric Environment (public / custom libraries) for repeatability
+  # ------------------------------------------------------------------ code: magics and paths
+  - id: MAGIC-RUN
+    category: magic commands
+    applies: code
+    pattern: '^\s*(#\s*MAGIC\s+)?%run\b'
+    penalty: 3
+    support: supported
+    guidance: '%run works in Fabric; fix notebook paths and names'
+  - id: MAGIC-SH-FS
+    category: magic commands
+    applies: code
+    pattern: '^\s*(#\s*MAGIC\s+)?%(sh|fs)\b'
+    penalty: 6
+    support: partial
+    guidance: Rewrite shell / %fs cells with notebookutils or Python
+  - id: DBFS-PATH
+    category: storage paths
+    applies: code
+    pattern: 'dbfs:/|/dbfs/|["'']/mnt/|FileStore'
+    penalty: 10
+    support: partial
+    guidance: Repoint to OneLake (abfss://) / Lakehouse Files and move the data
+  - id: ADLS-KEY-CONF
+    category: storage paths
+    applies: code
+    pattern: 'fs\.azure\.(account|sas|oauth)'
+    penalty: 8
+    support: partial
+    guidance: Drop storage keys; use Entra ID / workspace identity and shortcuts
+  - id: UC-3PART
+    category: unity catalog
+    applies: code
+    pattern: '\b(FROM|JOIN|INTO|TABLE|VIEW)\s+`?\w+`?\.`?\w+`?\.`?\w+`?'
+    penalty: 5
+    support: supported
+    guidance: Map catalog.schema.table names to schema-enabled Lakehouse names
+  # ------------------------------------------------------------------ code: ingestion / pipelines
+  - id: AUTOLOADER
+    category: ingestion
+    applies: code
+    pattern: 'cloudFiles'
+    penalty: 18
+    support: manual
+    guidance: No Auto Loader; use a Structured Streaming file source, pipeline triggers or Eventstream
+  - id: DLT
+    category: delta live tables
+    applies: code
+    pattern: 'import dlt\b|@dlt\.|dlt\.(read|table|view)|CREATE\s+(OR\s+REFRESH\s+)?(STREAMING|LIVE)\s+(TABLE|VIEW)'
+    penalty: 30
+    support: manual
+    guidance: No DLT in Fabric; redesign as Materialized Lake Views / Spark jobs
+  - id: COPY-INTO
+    category: ingestion
+    applies: code
+    pattern: '\bCOPY\s+INTO\b'
+    penalty: 10
+    support: partial
+    guidance: Replace with a pipeline Copy activity or Spark read + write
+  - id: STREAMING
+    category: streaming
+    applies: code
+    pattern: 'readStream|writeStream|foreachBatch'
+    penalty: 8
+    support: supported
+    guidance: Structured Streaming works; re-validate checkpoints, triggers and sinks
+  - id: READ-FILES-FN
+    category: ingestion
+    applies: code
+    pattern: '\bread_files\s*\('
+    penalty: 6
+    support: partial
+    guidance: Replace with spark.read on a OneLake path
+  - id: DELTA-SHARING
+    category: sharing
+    applies: code
+    pattern: 'delta_sharing|CREATE\s+SHARE'
+    penalty: 10
+    support: partial
+    guidance: Use OneLake shortcuts / external data sharing in Fabric
+  # ------------------------------------------------------------------ code: delta and SQL
+  - id: DBX-SPARKCONF
+    category: spark configuration
+    applies: code
+    pattern: 'spark\.databricks\.'
+    penalty: 6
+    support: partial
+    guidance: Databricks-only Spark configs; remove or map to Fabric equivalents
+  - id: SPARK-CONF-SET
+    category: spark configuration
+    applies: code
+    pattern: 'spark\.conf\.set\('
+    penalty: 1
+    support: supported
+    guidance: Map session configs to a Fabric Environment / %%configure
+  - id: DELTA-ZORDER
+    category: delta
+    applies: code
+    pattern: '\bZORDER\s+BY\b'
+    penalty: 2
+    support: supported
+    guidance: Prefer V-Order + OPTIMIZE in Fabric
+  - id: LIQUID-CLUSTER
+    category: delta
+    applies: code
+    pattern: '\bCLUSTER\s+BY\b'
+    penalty: 6
+    support: partial
+    guidance: Verify liquid clustering support in the chosen Fabric runtime
+  - id: DELTA-CDF
+    category: delta
+    applies: code
+    pattern: 'table_changes\(|readChangeFeed|enableChangeDataFeed'
+    penalty: 6
+    support: partial
+    guidance: Change Data Feed; verify support in the chosen Fabric runtime
+  - id: TIME-TRAVEL
+    category: delta
+    applies: code
+    pattern: 'VERSION\s+AS\s+OF|TIMESTAMP\s+AS\s+OF|versionAsOf|timestampAsOf'
+    penalty: 2
+    support: supported
+    guidance: Time travel works on Lakehouse Delta; confirm log retention after the data copy
+  - id: GENERATED-COLS
+    category: delta
+    applies: code
+    pattern: 'GENERATED\s+(ALWAYS|BY\s+DEFAULT)\s+AS'
+    penalty: 6
+    support: partial
+    guidance: Identity / generated columns; verify Delta protocol support in Fabric
+  - id: CONSTRAINTS
+    category: delta
+    applies: code
+    pattern: 'ADD\s+CONSTRAINT|\bCHECK\s*\(|PRIMARY\s+KEY|FOREIGN\s+KEY'
+    penalty: 3
+    support: supported
+    guidance: CHECK constraints work on Delta; PK/FK are informational only
+  - id: GRANTS
+    category: security
+    applies: code
+    pattern: '^\s*(GRANT|REVOKE|DENY)\b|ALTER\s+\w+\s+\S+\s+OWNER'
+    penalty: 6
+    support: partial
+    guidance: Re-implement with Fabric workspace roles / OneLake security / SQL permissions
+  - id: SQL-PROC
+    category: sql objects
+    applies: code
+    pattern: '\bCREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\b|^\s*CALL\s+\w+\('
+    penalty: 15
+    support: manual
+    guidance: Rewrite stored procedures as T-SQL in Fabric Warehouse or as notebook logic
+  - id: SQL-UDF
+    category: sql objects
+    applies: code
+    pattern: '\bCREATE\s+(OR\s+REPLACE\s+)?(TEMP(ORARY)?\s+)?FUNCTION\b'
+    penalty: 8
+    support: partial
+    guidance: Recreate SQL UDFs as Warehouse T-SQL functions or PySpark functions
+  - id: PY-UDF
+    category: sql objects
+    applies: code
+    pattern: '@udf\b|@pandas_udf\b|\bpandas_udf\(|\budf\('
+    penalty: 3
+    support: supported
+    guidance: Python UDFs run in Fabric Spark; validate library dependencies
+  - id: JDBC-ODBC
+    category: connectivity
+    applies: code
+    pattern: 'jdbc:|format\(["'']jdbc|pyodbc|\bodbc\b'
+    penalty: 6
+    support: partial
+    guidance: Recreate as a Fabric connection / on-premises data gateway; move credentials to Key Vault
+  # ------------------------------------------------------------------ code: SDKs, ML, AI
+  - id: DBX-SDK
+    category: sdk
+    applies: code
+    pattern: 'from databricks\.(sdk|sql|connect)|import databricks_cli|databricks-connect'
+    penalty: 12
+    support: manual
+    guidance: Replace with Fabric REST APIs / semantic-link / notebookutils
+  - id: FEATURE-STORE
+    category: machine learning
+    applies: code
+    pattern: 'databricks\.feature_store|FeatureEngineeringClient|FeatureStoreClient'
+    penalty: 25
+    support: manual
+    guidance: No Feature Store in Fabric; rebuild as Delta tables + MLflow
+  - id: MLFLOW-DBX
+    category: machine learning
+    applies: code
+    pattern: 'databricks-uc|set_registry_uri\(["'']databricks'
+    penalty: 12
+    support: partial
+    guidance: Point MLflow at the Fabric workspace tracking server / registry
+  - id: MLFLOW
+    category: machine learning
+    applies: code
+    pattern: 'import mlflow'
+    penalty: 3
+    support: supported
+    guidance: MLflow is native in Fabric; change experiment and model paths
+  - id: AI-FUNCTIONS
+    category: ai
+    applies: code
+    pattern: '\b(ai_query|ai_classify|ai_extract|ai_gen|ai_summarize|vector_search|http_request)\s*\('
+    penalty: 20
+    support: manual
+    guidance: Databricks SQL AI functions; use Fabric AI functions / Azure OpenAI
+  # ------------------------------------------------------------------ structural: coverage
+  - id: NB-NOT-SCANNED
+    category: coverage
+    applies: structural
+    penalty: 60
+    support: manual
+    guidance: The notebook could not be scanned (too large or not exportable); review it manually
+  # ------------------------------------------------------------------ structural: languages
+  - id: LANG-SCALA
+    category: language
+    applies: structural
+    penalty: 4
+    support: supported
+    guidance: Scala is supported in Fabric notebooks; replace Databricks-specific APIs
+  - id: LANG-R
+    category: language
+    applies: structural
+    penalty: 4
+    support: supported
+    guidance: SparkR / R is supported in Fabric; verify packages and sparklyr usage
+  # ------------------------------------------------------------------ structural: jobs
+  - id: JOB-SPARK-PYTHON
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Spark Python task becomes a Spark Job Definition
+  - id: JOB-WHEEL
+    category: jobs
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: Publish the wheel to a Fabric Environment and call it from a Spark Job Definition
+  - id: JOB-JAR
+    category: jobs
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: JAR task becomes a Spark Job Definition (JAR)
+  - id: JOB-SPARK-SUBMIT
+    category: jobs
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: spark-submit tasks need rewriting as Spark Job Definitions
+  - id: JOB-SQL
+    category: jobs
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: SQL task becomes a pipeline Script / Warehouse activity (dialect check)
+  - id: JOB-DBT
+    category: jobs
+    applies: structural
+    penalty: 20
+    support: manual
+    guidance: dbt task needs a dbt job in Fabric (manual setup)
+  - id: JOB-DLT
+    category: jobs
+    applies: structural
+    penalty: 25
+    support: manual
+    guidance: DLT pipeline task; redesign as Materialized Lake Views
+  - id: JOB-RUN-JOB
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Run-job task becomes an Invoke pipeline activity
+  - id: JOB-CONDITION
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Condition task becomes an If Condition activity
+  - id: JOB-FOR-EACH
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: For-each task becomes a ForEach activity
+  - id: JOB-CLEAN-ROOM
+    category: jobs
+    applies: structural
+    penalty: 40
+    support: unsupported
+    guidance: Clean rooms have no Fabric equivalent
+  - id: JOB-DASHBOARD
+    category: jobs
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: Dashboard refresh task becomes a Power BI refresh / subscription
+  - id: JOB-LIBRARIES
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Move task libraries to a Fabric Environment
+  - id: JOB-SCHEDULE
+    category: jobs
+    applies: structural
+    penalty: 2
+    support: supported
+    guidance: Quartz cron becomes a Fabric pipeline schedule; complex cron needs manual mapping
+  - id: JOB-CONTINUOUS
+    category: jobs
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Continuous job; use a streaming notebook / Spark Job Definition with a retry policy
+  - id: JOB-EVENT-TRIGGER
+    category: jobs
+    applies: structural
+    penalty: 8
+    support: partial
+    guidance: File-arrival / table-update trigger; use Fabric storage-event triggers / Activator
+  - id: JOB-ALERTS
+    category: jobs
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Add a Teams / Outlook activity on the failure path
+  - id: JOB-INIT-SCRIPTS
+    category: jobs
+    applies: structural
+    penalty: 8
+    support: partial
+    guidance: Init scripts are unsupported; move setup to a Fabric Environment
+  # ------------------------------------------------------------------ structural: compute
+  - id: CLU-INIT-SCRIPTS
+    category: compute
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Init scripts are unsupported; move setup to a Fabric Environment
+  - id: CLU-DOCKER
+    category: compute
+    applies: structural
+    penalty: 15
+    support: manual
+    guidance: Custom Docker images are unsupported in Fabric Spark
+  - id: CLU-GPU
+    category: compute
+    applies: structural
+    penalty: 15
+    support: manual
+    guidance: Fabric has no GPU Spark pools; use Azure ML / AI Foundry for GPU work
+  - id: CLU-SPARKCONF
+    category: compute
+    applies: structural
+    penalty: 4
+    support: partial
+    guidance: Databricks-only Spark configs; map or drop them in the Fabric Environment
+  - id: CLU-OLD-RUNTIME
+    category: compute
+    applies: structural
+    penalty: 4
+    support: partial
+    guidance: Old runtime; code may need updates for Fabric Runtime 1.3+
+  - id: WH-SQL-DIALECT
+    category: sql warehouse
+    applies: structural
+    penalty: 15
+    support: partial
+    guidance: Spark SQL vs T-SQL; queries and views need translation for a Fabric Warehouse
+  - id: DLT-NO-EQUIVALENT
+    category: delta live tables
+    applies: structural
+    penalty: 40
+    support: manual
+    guidance: No direct DLT equivalent; expectations, APPLY CHANGES and streaming tables need redesign
+  # ------------------------------------------------------------------ structural: data
+  - id: TBL-VIEW
+    category: tables
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: View SQL must be re-created / translated
+  - id: TBL-MV
+    category: tables
+    applies: structural
+    penalty: 25
+    support: manual
+    guidance: Rebuild as a Fabric Materialized Lake View
+  - id: TBL-STREAMING
+    category: tables
+    applies: structural
+    penalty: 30
+    support: manual
+    guidance: Rebuild as a streaming Spark job
+  - id: TBL-FOREIGN
+    category: tables
+    applies: structural
+    penalty: 15
+    support: partial
+    guidance: Federated table; use Fabric mirroring or a shortcut to the source
+  - id: TBL-NON-DELTA
+    category: tables
+    applies: structural
+    penalty: 5
+    support: partial
+    guidance: Non-Delta table; convert to Delta or shortcut as files
+  - id: TBL-HIVE-METASTORE
+    category: tables
+    applies: structural
+    penalty: 5
+    support: partial
+    guidance: Legacy hive_metastore table; upgrade or copy into a Lakehouse
+  - id: TBL-ROW-COL-SECURITY
+    category: security
+    applies: structural
+    penalty: 15
+    support: partial
+    guidance: Row filters / column masks; redo as OneLake security / RLS
+  - id: TBL-DELTA-FEATURES
+    category: delta
+    applies: structural
+    penalty: 5
+    support: partial
+    guidance: Advanced Delta protocol features; verify Fabric runtime compatibility
+  - id: TBL-CDF
+    category: delta
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: Change Data Feed enabled; verify support in the chosen Fabric runtime
+  - id: TBL-TYPE
+    category: tables
+    applies: structural
+    penalty: 8
+    support: partial
+    guidance: Unsupported / newer data type (VARIANT, INTERVAL, GEOGRAPHY ...); convert the column first
+  - id: VOL-FILES
+    category: storage
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Copy the files or shortcut the underlying storage
+  - id: EXTLOC
+    category: storage
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Create an ADLS / S3 shortcut; grant the Fabric identity access
+  - id: CRED-STORAGE
+    category: security
+    applies: structural
+    penalty: 20
+    support: partial
+    guidance: Grant the Fabric identity access to the storage; secrets are not exportable
+  - id: CONN-RECREATE
+    category: connectivity
+    applies: structural
+    penalty: 15
+    support: partial
+    guidance: Recreate the connection; credentials cannot be exported
+  - id: FUNC-SQL
+    category: sql objects
+    applies: structural
+    penalty: 8
+    support: partial
+    guidance: Recreate the SQL function; translate and validate the body
+  - id: FUNC-PYTHON
+    category: sql objects
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Recreate the Python function as a PySpark UDF; validate the body
+  # ------------------------------------------------------------------ structural: analytics / ML
+  - id: QUERY-DIALECT
+    category: sql warehouse
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Spark SQL vs T-SQL; verify the dialect if moved to a Warehouse
+  - id: DASH-REBUILD
+    category: dashboards
+    applies: structural
+    penalty: 45
+    support: manual
+    guidance: Manual rebuild in Power BI (datasets -> semantic model, visuals -> report)
+  - id: ALERT-REBUILD
+    category: monitoring
+    applies: structural
+    penalty: 20
+    support: manual
+    guidance: Rebuild in Activator or a pipeline with a Teams / Outlook activity
+  - id: MODEL-REGISTRY
+    category: machine learning
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Re-register model artifacts in the Fabric MLflow registry
+  - id: SERVING-NO-EQUIVALENT
+    category: machine learning
+    applies: structural
+    penalty: 60
+    support: unsupported
+    guidance: No native Fabric model serving; rehost on Azure ML / AI Foundry
+  # ------------------------------------------------------------------ structural: platform
+  - id: LIB-REQUIREMENTS
+    category: libraries
+    applies: structural
+    penalty: 2
+    support: supported
+    guidance: Add the requirements file to a Fabric Environment
+  - id: LIB-WHL
+    category: libraries
+    applies: structural
+    penalty: 3
+    support: supported
+    guidance: Upload the wheel as a custom library in a Fabric Environment
+  - id: LIB-JAR
+    category: libraries
+    applies: structural
+    penalty: 5
+    support: supported
+    guidance: Upload the JAR as a custom library in a Fabric Environment
+  - id: LIB-CRAN
+    category: libraries
+    applies: structural
+    penalty: 6
+    support: partial
+    guidance: Install CRAN packages in the Fabric Environment / notebook session
+  - id: LIB-MAVEN
+    category: libraries
+    applies: structural
+    penalty: 8
+    support: partial
+    guidance: Download the Maven coordinates as a JAR and upload it to the Environment
+  - id: LIB-EGG
+    category: libraries
+    applies: structural
+    penalty: 8
+    support: unsupported
+    guidance: Python eggs are unsupported; rebuild as a wheel
+  - id: LIB-OTHER
+    category: libraries
+    applies: structural
+    penalty: 5
+    support: partial
+    guidance: Unknown library source; check how to provide it in a Fabric Environment
+  - id: SECRET-VALUES
+    category: security
+    applies: structural
+    penalty: 25
+    support: partial
+    guidance: Secret values cannot be exported; re-enter them into Azure Key Vault
+  - id: MOUNT-REPLACE
+    category: storage
+    applies: structural
+    penalty: 10
+    support: partial
+    guidance: Replace the mount with a shortcut; update every /mnt path in code

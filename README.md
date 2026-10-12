@@ -1,20 +1,101 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# Databricks → Microsoft Fabric Pre-Migration Discovery
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+A Kanerika accelerator that takes stock of a Databricks workspace before a migration to
+Microsoft Fabric and writes a branded, client-ready **Excel discovery workbook**: every
+notebook, job, DLT pipeline, cluster, SQL warehouse, Unity Catalog object (down to columns),
+grant, query, dashboard, alert, model, serving endpoint, library, secret scope, mount, repo and
+identity — with the Fabric target and a first readiness classification for each.
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+* **Read-only**: only `GET` requests against the workspace. Nothing is created, changed or run.
+* **Live or offline**: scan a workspace through the REST API, or read exported notebooks
+  (`.py .sql .scala .r .ipynb`, `.dbc`, `.zip`) or a saved snapshot.
+* **One file to send**: a single executable built with PyInstaller (Windows / Linux / macOS).
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+## Quick start
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+```bash
+pip install -e ".[dev]"                     # Python 3.11-3.13
+
+# live workspace (prefer environment variables for secrets)
+export DATABRICKS_HOST=https://adb-1234567890123456.7.azuredatabricks.net
+export DATABRICKS_TOKEN=dapi...
+python discovery.py discover --out output
+
+# offline export, or a snapshot from an earlier run
+python discovery.py discover --input ./exports --out output
+
+# interactive (what the double-clicked executable does)
+python discovery.py
+```
+
+No install at all: `uv run discovery.py discover --help` (dependencies come from the PEP 723
+header of `discovery.py`).
+
+The workbook path is printed on stdout; progress and a one-line summary on stderr.
+
+## Command line
+
+```
+python discovery.py discover [OPTIONS]
+  -i, --input PATH        offline: folder / .dbc / .zip / snapshot .json (omit for live)
+  --host TEXT             workspace URL            (or DATABRICKS_HOST)
+  --token TEXT            personal access token    (or DATABRICKS_TOKEN)
+  --client-id/--client-secret   service principal OAuth (or DATABRICKS_CLIENT_ID/_SECRET)
+  --profile TEXT          profile in ~/.databrickscfg
+  -o, --out PATH          output folder (default: output)
+  --name TEXT             workbook file name
+  --save-snapshot         also write the raw capture JSON (contains notebook source)
+  --only TEXT             comma list of collectors (python discovery.py collectors)
+  --catalogs TEXT         comma list of Unity Catalog catalogs
+  --schemas TEXT          comma list of schemas (catalog.schema or schema)
+  --skip-repos --no-columns --no-view-sql --max-notebooks N --insecure
+  -c, --config FILE       settings file (.yaml / .toml); every setting also as DBXF_<NAME>
+  -v, --verbose
+python discovery.py version | catalog-info | collectors
+```
+
+Exit codes: 0 ok · 1 internal error · 2 unsupported file · 4 unsafe archive · 5 catalog ·
+6 cannot write · 7 nothing found · 8 invalid snapshot · 10 connection/auth · 11 configuration.
+
+## The workbook
+
+**Discovery** (dashboard: navigation, 16 KPI tiles, scan summary, charts) → **Assets**
+(readiness of every object) → **Findings** (Databricks features that need work, with Fabric
+guidance) → one sheet per object type (Notebooks, Dependencies, Repos, Jobs, JobTasks,
+DLTPipelines, Clusters, InstancePools, ClusterPolicies, SQLWarehouses, Libraries, Catalogs,
+Schemas, Tables, Columns, Views, Volumes, ExternalLocations, StorageCredentials, Connections,
+Functions, Grants, SQLQueries, Dashboards, Alerts, Models, ServingEndpoints, Experiments,
+SecretScopes, Mounts, Identities) → **Warnings** → **Information** → **Totals** (the single
+source of truth: every number is a live formula).
+
+## Build the executable
+
+```bash
+make build                                                     # Linux / macOS
+powershell -ExecutionPolicy Bypass -File packaging\build.ps1   # Windows -> dist\dbx-discovery.exe
+```
+
+PyInstaller cannot cross-compile: build each OS on that OS. The GitHub Actions workflow
+(`.github/workflows/build.yml`) builds and smoke-tests all three and uploads them as
+artifacts. Binaries are unsigned: on Windows choose *More info → Run anyway* (SmartScreen); on
+macOS right-click → Open the first time (Gatekeeper). Linux binaries need a glibc at least as
+new as the build machine's.
+
+## Documentation
+
+* [docs/TESTING.md](docs/TESTING.md) — how to test: automated gate, offline runs, a real
+  workspace, the executable, what to check in the workbook, troubleshooting
+* [docs/METHODOLOGY.md](docs/METHODOLOGY.md) — every number and why
+* [docs/CATALOG.md](docs/CATALOG.md) — the Databricks → Fabric support catalog
+* [CLAUDE.md](CLAUDE.md) — architecture, invariants, build order (read first when developing)
+* [docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md](docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md) —
+  the Kanerika accelerator standard this project follows
+
+## Develop
+
+```bash
+make check          # ruff + format + mypy strict + pytest (coverage >= 80 %)
+make test-all       # + LibreOffice recalculation and wheel tests
+make demo           # discovery of the bundled fixture -> output/
+make assets         # regenerate brand images and sheet titles
+```
