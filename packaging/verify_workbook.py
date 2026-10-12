@@ -30,8 +30,8 @@ def main() -> int:
     if tuple(wb.sheetnames) != SHEET_ORDER:
         problems.append(f"sheet order differs: {wb.sheetnames}")
     for name in ("Discovery", "Assets", "Totals"):
-        if name in wb.sheetnames and len(wb[name]._images) < 3:
-            problems.append(f"{name}: branding images missing")
+        if name in wb.sheetnames and len(wb[name]._images) != 1:
+            problems.append(f"{name}: expected one banner picture")
     assets = sum(1 for row in wb["Assets"].iter_rows(min_row=7, max_col=1) if row[0].value)
     if assets < args.min_assets:
         problems.append(f"Assets has {assets} rows, expected >= {args.min_assets}")
