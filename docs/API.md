@@ -28,6 +28,9 @@ Interactive docs: `http://localhost:7073/docs`.
 | `DBXF_MAX_UPLOAD_BYTES` | 100 MB | upload cap, enforced while streaming |
 | `DBXF_API_MAX_WORKERS` | 2 | runs in parallel |
 
+Ready-to-paste curl requests for every endpoint (Postman **Import → Raw text**):
+[API_CURL_REQUESTS.md](API_CURL_REQUESTS.md).
+
 ## Endpoints
 
 | Method | Path | |

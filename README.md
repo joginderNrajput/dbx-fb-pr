@@ -122,6 +122,8 @@ new as the build machine's.
 * [docs/METHODOLOGY.md](docs/METHODOLOGY.md) — every number and why
 * [docs/ASSESSMENT.md](docs/ASSESSMENT.md) — rules file, assessment workbook, database tables
 * [docs/API.md](docs/API.md) — REST API
+* [docs/API_CURL_REQUESTS.md](docs/API_CURL_REQUESTS.md) — every API request as curl, to
+  paste into Postman
 * [docs/CATALOG.md](docs/CATALOG.md) — the Databricks → Fabric support catalog
 * [CLAUDE.md](CLAUDE.md) — architecture, invariants, build order (read first when developing)
 * [docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md](docs/PREMIGRATION_ACCELERATOR_BLUEPRINT.md) —

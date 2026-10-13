@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `docs/API_CURL_REQUESTS.md`: every API request as a curl command for Postman.
+
 ### Changed
 - The REST API listens on port **7073** by default (CLI `serve`, Docker image and
   docker-compose). Override with `DBXF_API_PORT` / `serve --port`.
