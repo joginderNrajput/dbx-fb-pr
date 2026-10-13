@@ -353,17 +353,22 @@ def db_init(
     config: Annotated[Path | None, typer.Option("--config", "-c")] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
-    """Create the Postgres schema and tables (DBXF_DATABASE_URL, DBXF_DB_SCHEMA)."""
+    """Apply the Alembic migrations (= alembic upgrade head) to DBXF_DATABASE_URL."""
 
     def run() -> None:
-        from dbx_premig.db.engine import create_schema, ddl_sql
+        from dbx_premig.db.engine import ddl_sql, describe_target, migrate
 
         settings = load_settings(config)
         if print_sql:
-            typer.echo(ddl_sql(settings.db_schema), nl=False)
+            typer.echo(ddl_sql(settings), nl=False)
             return
-        target = create_schema(settings)
-        stderr_console.print(f"[green]Tables ready[/] in schema {settings.db_schema} on {target}.")
+        configure_logging(settings.log_level, verbose)
+        revision = migrate(settings)
+        prefix = f", table prefix '{settings.db_table_prefix}'" if settings.db_table_prefix else ""
+        stderr_console.print(
+            f"[green]Database at revision {revision}[/]: schema {settings.db_schema}{prefix} "
+            f"on {describe_target(settings)}."
+        )
 
     _handle(verbose, run)
 

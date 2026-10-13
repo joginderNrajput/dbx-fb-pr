@@ -61,7 +61,7 @@ def persist_assessment(
 
     if not organization_id or not job_id:
         raise DatabaseError("organization_id and job_id are both required to persist.")
-    t = build_tables(settings.db_schema)
+    t = build_tables(settings.db_schema, settings.db_table_prefix)
     owner = {"organization_id": organization_id, "job_id": job_id}
     dw = result.discovery
     scan = dw.scan

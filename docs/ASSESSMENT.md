@@ -105,9 +105,26 @@ and the charts. Re-run the assessment to apply a new rules file to every asset.
 
 ## 3. Database tables
 
-Schema `DBXF_DB_SCHEMA` (default `databricks_to_fabric_premigration`). Create it with
-`python discovery.py db-init` (idempotent) or run
-`dbx_premig/db/migrations/0001_initial.sql`. Every table carries `organization_id` and
+The tables live in the existing Azure Database for PostgreSQL named by `DBXF_DATABASE_URL`
+(in `.env`), schema `DBXF_DB_SCHEMA`. They are created and changed **only by Alembic
+migrations** (`dbx_premig/db/migrations/versions/`):
+
+```bash
+python discovery.py db-init            # = alembic upgrade head (idempotent)
+alembic upgrade head                   # same, from the repository root (alembic.ini)
+alembic current                        # which revision the database is at
+python discovery.py db-init --print-sql   # the SQL, without touching a database
+```
+
+The migration state is kept in `dbx_premig_alembic_version` (`<prefix>alembic_version` with a
+table prefix) in the same schema, so it never mixes with another tool's `alembic_version`.
+**Sharing a schema** with the Alteryx accelerator (which already has `totals`, `inventory`,
+`estimation`, `computation`): set `DBXF_DB_TABLE_PREFIX=dbx_` and the tables become
+`dbx_totals`, `dbx_inventory`, `dbx_finding`, `dbx_estimation`, `dbx_computation`. Without a
+prefix, `db-init` refuses to touch same-named tables it did not create (exit 9) and changes
+nothing. Remote hosts are reached with `sslmode=require`.
+
+Every table carries `organization_id` and
 `job_id` (indexed). Persisting again for the same pair **replaces** that pair's rows in one
 transaction (delete children → insert), so a re-run never duplicates.
 

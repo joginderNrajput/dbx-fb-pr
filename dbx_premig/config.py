@@ -153,7 +153,18 @@ class Settings(BaseSettings):
     database_url: SecretStr | None = None
     """Postgres URL (postgresql+psycopg://user:pass@host:5432/db). Unset = no persistence."""
     db_schema: str = "databricks_to_fabric_premigration"
-    """Postgres schema holding the discovery / assessment tables."""
+    """Postgres schema holding the discovery / assessment tables. Created by the migration if
+    missing (the role then needs CREATE on the database)."""
+    db_table_prefix: str = ""
+    """Put in front of every table / index name, e.g. "dbx_" when the schema already holds
+    another accelerator's totals / inventory / estimation / computation tables."""
+    db_sslmode: str | None = None
+    """libpq sslmode. None = "require" for remote hosts (Azure Database for PostgreSQL needs
+    TLS) and "prefer" for localhost. An sslmode in the URL always wins."""
+    db_connect_timeout_s: Annotated[int, Field(ge=1, le=300)] = 15
+    """Seconds to wait for the database server to answer."""
+    db_auto_migrate: bool = False
+    """When true, the API applies the Alembic migrations (alembic upgrade head) at start-up."""
 
     # ------------------------------------------------------------------ logging
     log_level: str = "WARNING"
@@ -174,6 +185,21 @@ class Settings(BaseSettings):
     def _schema_identifier(cls, value: str) -> str:
         if not re.fullmatch(r"[a-z_][a-z0-9_]{0,62}", value):
             raise ValueError("db_schema must be a lower-case SQL identifier")
+        return value
+
+    @field_validator("db_table_prefix")
+    @classmethod
+    def _prefix_identifier(cls, value: str) -> str:
+        if value and not re.fullmatch(r"[a-z_][a-z0-9_]{0,20}", value):
+            raise ValueError("db_table_prefix must be lower-case letters, digits and _")
+        return value
+
+    @field_validator("db_sslmode")
+    @classmethod
+    def _sslmode(cls, value: str | None) -> str | None:
+        modes = {"disable", "allow", "prefer", "require", "verify-ca", "verify-full"}
+        if value is not None and value not in modes:
+            raise ValueError(f"db_sslmode must be one of {', '.join(sorted(modes))}")
         return value
 
     @field_validator("collectors")

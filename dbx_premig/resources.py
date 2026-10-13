@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-__all__ = ["asset_path", "catalog_path", "package_root", "rules_path"]
+__all__ = ["asset_path", "catalog_path", "migrations_path", "package_root", "rules_path"]
 
 
 def package_root() -> Path:
@@ -33,3 +33,8 @@ def asset_path(name: str) -> Path:
 def rules_path() -> Path:
     """The bundled default assessment rules file."""
     return package_root() / "estimation" / "data" / "assessment_rules.yaml"
+
+
+def migrations_path() -> Path:
+    """The Alembic script directory (``db/migrations``)."""
+    return package_root() / "db" / "migrations"

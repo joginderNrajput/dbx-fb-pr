@@ -59,7 +59,7 @@ python discovery.py discover [OPTIONS]
 python discovery.py assess  -i discovery.xlsx [--rules my_rules.yaml] [--persist --org O --job J]
 python discovery.py analyze [discover options] [--rules …] [--persist --org O --job J]
 python discovery.py rules-check [--rules my_rules.yaml]
-python discovery.py db-init [--print-sql]          # needs DBXF_DATABASE_URL
+python discovery.py db-init [--print-sql]          # Alembic upgrade head on DBXF_DATABASE_URL
 python discovery.py serve [--host --port]          # REST API (api extra)
 python discovery.py version | catalog-info | collectors
 ```
@@ -92,9 +92,9 @@ own copy with `--rules` or `DBXF_ASSESSMENT_RULES`. See [docs/ASSESSMENT.md](doc
 
 ```bash
 pip install -e ".[api,postgres]"
-export DBXF_DATABASE_URL=postgresql+psycopg://user:pw@host:5432/db
-python discovery.py db-init && python discovery.py serve --host 0.0.0.0
-# or: docker compose --profile local-db up -d --build
+cp .env.example .env            # then fill in DBXF_DATABASE_URL (Azure Postgres), DBXF_DB_SCHEMA …
+python discovery.py db-init && python discovery.py serve --host 0.0.0.0   # db-init = alembic upgrade head
+# or: docker compose up -d --build   (migrates on start-up, reads .env)
 ```
 
 `POST /v1/assessments` (multipart: discovery workbook, or credentials) and

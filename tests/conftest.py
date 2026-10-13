@@ -77,11 +77,11 @@ def pg_settings(tmp_path: Path) -> Iterator[Settings]:
 
     from pydantic import SecretStr
 
-    from dbx_premig.db.engine import create_schema
+    from dbx_premig.db.engine import migrate
 
     schema = f"t_{uuid.uuid4().hex[:10]}"
     settings = load_settings(database_url=SecretStr(_TEST_DB), db_schema=schema)
-    create_schema(settings)
+    migrate(settings)
     yield settings
     from dbx_premig.db.engine import get_engine
 

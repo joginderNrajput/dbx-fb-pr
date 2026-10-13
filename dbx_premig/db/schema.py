@@ -1,5 +1,11 @@
-"""Table definitions (SQLAlchemy Core). ``migrations/0001_initial.sql`` is generated from
-these with ``python discovery.py db-init --print-sql`` and a test keeps the two in step."""
+"""Table definitions (SQLAlchemy Core): what the code writes to.
+
+The database itself is created and changed only by the Alembic migrations in
+``db/migrations/versions``; ``tests/test_db.py`` checks that a database migrated to head
+matches these definitions exactly (no drift). ``prefix`` (``DBXF_DB_TABLE_PREFIX``) is put in
+front of every table, index and constraint name, so the tables can share a schema with
+another accelerator's tables of the same names.
+"""
 
 from __future__ import annotations
 
@@ -49,15 +55,16 @@ def _owner() -> list[Column]:  # type: ignore[type-arg]
     ]
 
 
-def build_tables(schema: str) -> DbTables:
+def build_tables(schema: str, prefix: str = "") -> DbTables:
     md = MetaData(schema=schema)
-    s = f"{schema}."
+    s = f"{schema}.{prefix}"
+    p = prefix
     count_cols = [
         Column(key, Numeric(10, 2) if key == "avg_readiness_score" else BigInteger)
         for key in COUNT_KEYS
     ]
     totals = Table(
-        "totals",
+        f"{p}totals",
         md,
         Column("scan_id", Integer, primary_key=True, autoincrement=True),
         Column("source", Text),
@@ -72,10 +79,10 @@ def build_tables(schema: str) -> DbTables:
         Column("created_at", DateTime(timezone=True), server_default=func.now()),
         *count_cols,
         *_owner(),
-        Index("ix_totals_org_job", "organization_id", "job_id"),
+        Index(f"{p}ix_totals_org_job", "organization_id", "job_id"),
     )
     inventory = Table(
-        "inventory",
+        f"{p}inventory",
         md,
         Column("inventory_id", Integer, primary_key=True, autoincrement=True),
         Column("scan_id", Integer, ForeignKey(f"{s}totals.scan_id"), nullable=False),
@@ -93,11 +100,11 @@ def build_tables(schema: str) -> DbTables:
         Column("tasks", Integer),
         Column("columns", Integer),
         *_owner(),
-        UniqueConstraint("scan_id", "asset_key", name="inventory_scan_id_asset_key_key"),
-        Index("ix_inventory_org_job", "organization_id", "job_id"),
+        UniqueConstraint("scan_id", "asset_key", name=f"{p}inventory_scan_id_asset_key_key"),
+        Index(f"{p}ix_inventory_org_job", "organization_id", "job_id"),
     )
     finding = Table(
-        "finding",
+        f"{p}finding",
         md,
         Column("finding_id", Integer, primary_key=True, autoincrement=True),
         Column("scan_id", Integer, ForeignKey(f"{s}totals.scan_id"), nullable=False),
@@ -110,10 +117,10 @@ def build_tables(schema: str) -> DbTables:
         Column("support", String(20)),
         Column("guidance", Text),
         *_owner(),
-        Index("ix_finding_org_job", "organization_id", "job_id"),
+        Index(f"{p}ix_finding_org_job", "organization_id", "job_id"),
     )
     estimation = Table(
-        "estimation",
+        f"{p}estimation",
         md,
         Column("estimation_id", Integer, primary_key=True, autoincrement=True),
         Column("scan_id", Integer, ForeignKey(f"{s}totals.scan_id"), nullable=False),
@@ -135,11 +142,11 @@ def build_tables(schema: str) -> DbTables:
         Column("automation_test_hours", _HOURS),
         Column("hours_saved", _HOURS),
         *_owner(),
-        UniqueConstraint("scan_id", "inventory_id", name="estimation_scan_id_inventory_id_key"),
-        Index("ix_estimation_org_job", "organization_id", "job_id"),
+        UniqueConstraint("scan_id", "inventory_id", name=f"{p}estimation_scan_id_inventory_id_key"),
+        Index(f"{p}ix_estimation_org_job", "organization_id", "job_id"),
     )
     computation = Table(
-        "computation",
+        f"{p}computation",
         md,
         Column("computation_id", Integer, primary_key=True, autoincrement=True),
         Column("scan_id", Integer, ForeignKey(f"{s}totals.scan_id"), nullable=False,
@@ -165,7 +172,7 @@ def build_tables(schema: str) -> DbTables:
         Column("saving_pct", _HOURS),
         Column("rules_version", String(255)),
         *_owner(),
-        Index("ix_computation_org_job", "organization_id", "job_id"),
+        Index(f"{p}ix_computation_org_job", "organization_id", "job_id"),
     )  # fmt: skip
     return DbTables(
         md,

@@ -196,3 +196,25 @@ def test_api_persists_to_postgres(
     persisted = r.json()["persisted"]
     assert persisted["rows"] == {"totals": 1, "inventory": 41, "finding": 70, "estimation": 41,
                                  "computation": 1}  # fmt: skip
+
+
+@pytest.mark.database
+def test_api_auto_migrates_on_startup(tmp_path: Path, pg_settings: Settings) -> None:
+    import sqlalchemy as sa
+
+    from dbx_premig.db.engine import get_engine
+
+    fresh = pg_settings.model_copy(
+        update={"db_schema": pg_settings.db_schema + "_auto", "db_auto_migrate": True,
+                "api_work_dir": tmp_path}
+    )  # fmt: skip
+    engine = get_engine(fresh)
+    try:
+        with TestClient(create_app(fresh)) as client:  # the lifespan runs the migrations
+            assert client.get("/healthz").status_code == 200
+        with engine.connect() as conn:
+            assert "totals" in sa.inspect(conn).get_table_names(schema=fresh.db_schema)
+    finally:
+        with engine.begin() as conn:
+            conn.execute(sa.text(f'DROP SCHEMA IF EXISTS "{fresh.db_schema}" CASCADE'))
+        engine.dispose()

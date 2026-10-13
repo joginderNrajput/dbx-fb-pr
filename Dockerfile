@@ -1,6 +1,7 @@
 # REST API image: discovery + assessment + optional Postgres sink.
 #   docker build -t dbx-premig:0.2.0 .
-#   docker run -p 7073:7073 -e DBXF_DATABASE_URL=... dbx-premig:0.2.0
+#   docker run -p 7073:7073 --env-file .env -e DBXF_DB_AUTO_MIGRATE=true dbx-premig:0.2.0
+# The database is external (Azure Database for PostgreSQL, from .env); no Postgres inside.
 FROM python:3.12-slim AS build
 WORKDIR /src
 COPY pyproject.toml README.md discovery.py ./
@@ -18,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && mkdir -p /data/runs && chown -R app /data
 COPY --from=build /wheels /wheels
 RUN pip install --no-index --find-links /wheels "dbx-premig[api,postgres]" && rm -rf /wheels
+COPY --chown=app alembic.ini /data/alembic.ini
 USER app
 WORKDIR /data
 EXPOSE 7073

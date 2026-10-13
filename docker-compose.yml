@@ -1,6 +1,11 @@
-# API + (opt-in) local Postgres.
-#   docker compose up -d --build                       # API only (DB from .env)
-#   docker compose --profile local-db up -d --build    # API + throwaway Postgres
+# The REST API. The database is the existing Azure Database for PostgreSQL configured in
+# .env (DBXF_DATABASE_URL, DBXF_DB_SCHEMA): no Postgres container is started.
+#
+#   docker compose up -d --build
+#
+# On start-up the API applies the Alembic migrations (DBXF_DB_AUTO_MIGRATE=true), so the
+# tables exist before the first request. Set it to "false" to run them by hand instead:
+#   docker compose run --rm api db-init
 services:
   api:
     build: .
@@ -9,12 +14,12 @@ services:
     environment:
       DBXF_API_PORT: "${DBXF_API_PORT:-7073}"
       DBXF_LOG_LEVEL: "INFO"
+      DBXF_DB_AUTO_MIGRATE: "${DBXF_DB_AUTO_MIGRATE:-true}"
       # DBXF_API_KEY: set in .env
-      # DBXF_DATABASE_URL: postgresql+psycopg://premig:premig@db:5432/premig   (local-db profile)
       # DBXF_ASSESSMENT_RULES: /config/assessment_rules.yaml
     env_file:
       - path: .env
-        required: false
+        required: true
     volumes:
       - runs:/data/runs
     healthcheck:
@@ -29,18 +34,5 @@ services:
           cpus: "2"
           memory: 2g
 
-  db:
-    image: postgres:16-alpine
-    profiles: ["local-db"]
-    environment:
-      POSTGRES_USER: premig
-      POSTGRES_PASSWORD: premig
-      POSTGRES_DB: premig
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-
 volumes:
   runs:
-  pgdata:

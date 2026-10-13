@@ -80,8 +80,16 @@ dist=`dbx-premig`, PFX=`DBXF`, PORT=7073.
 
 ### Database invariants
 - Tables: totals (scan + item counts), inventory, finding, estimation, computation; all with
-  organization_id + job_id. Defined once in `db/schema.py`; `db/migrations/0001_initial.sql`
-  is generated from it (`test_db.py::test_migration_file_matches_schema`).
+  organization_id + job_id. The database is an existing Azure Database for PostgreSQL from
+  `.env` (no Postgres container). Tables are created / changed ONLY by Alembic revisions
+  (`db/migrations/versions`, run by `db-init` = `alembic upgrade head`, or by the API when
+  `DBXF_DB_AUTO_MIGRATE=true`). A schema change = a new revision; never edit 0001.
+  `db/schema.py` must equal the migrated database (`test_migrated_database_matches_the_models`).
+- Shared schema: our version table is `dbx_premig_alembic_version` (`<prefix>alembic_version`),
+  never `alembic_version`; `DBXF_DB_TABLE_PREFIX` prefixes table/index/constraint names;
+  `migrate()` refuses same-named tables it did not create
+  (`test_shared_schema_guard_and_prefix`). *Why:* the Alteryx accelerator's tables of the same
+  names live in the same schema. Remote hosts get `sslmode=require` (Azure needs TLS).
 - One call = one transaction; re-posting the same (org, job) deletes its rows children-first
   and inserts fresh ones (`test_persist_and_replace`). VARCHAR overflow → DatabaseError naming
   table/column/limit. `describe_target` is the only URL renderer (no credentials).
@@ -161,7 +169,8 @@ dbx_premig/
                  discovery_reader assessment_writer  banner  sheets/*  assets/
   service.py cli.py prompts.py __main__.py
   api/           app.py routes.py schemas.py jobs.py uploads.py
-  db/            schema.py engine.py persist.py migrations/0001_initial.sql
+  db/            schema.py engine.py persist.py migrations/ (Alembic env + versions/)
+alembic.ini      script_location only; no URL (env.py reads the settings / .env)
 scripts/extract_assets.py, scripts/brand_src/   brand assets (build time)
 packaging/       spec, build.sh, build.ps1, verify_workbook.py, icons, version info
 tests/           fake_workspace.py (local HTTP fake of the REST API), archives.py, fixtures/mini

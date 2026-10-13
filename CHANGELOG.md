@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- The database is the existing Azure Database for PostgreSQL configured in `.env`; the
+  Postgres container is removed from docker-compose. Tables are created and upgraded by
+  **Alembic** migrations (`db-init` = `alembic upgrade head`; the Docker API migrates on
+  start-up). New settings: `DBXF_DB_TABLE_PREFIX` (share a schema with the Alteryx
+  accelerator), `DBXF_DB_SSLMODE` (default `require` for remote hosts),
+  `DBXF_DB_CONNECT_TIMEOUT_S`, `DBXF_DB_AUTO_MIGRATE`. `db-init` refuses to touch same-named
+  tables it did not create.
+
 ### Added
 - `docs/API_CURL_REQUESTS.md`: every API request as a curl command for Postman.
 

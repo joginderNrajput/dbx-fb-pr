@@ -6,15 +6,18 @@ optionally writes the database tables (see [ASSESSMENT.md](ASSESSMENT.md)).
 
 ## Run it
 
+The database is the existing **Azure Database for PostgreSQL**, configured in `.env`
+(`DBXF_DATABASE_URL`, `DBXF_DB_SCHEMA`, `DBXF_DB_TABLE_PREFIX`; template: `.env.example`).
+No Postgres container is used.
+
 ```bash
 pip install -e ".[api,postgres]"
-export DBXF_DATABASE_URL=postgresql+psycopg://user:password@host:5432/db   # optional
-python discovery.py db-init                                                # once, if using a DB
-python discovery.py serve --host 0.0.0.0                                   # port DBXF_API_PORT (7073)
+python discovery.py db-init                      # Alembic: create / upgrade the tables (idempotent)
+python discovery.py serve --host 0.0.0.0         # port DBXF_API_PORT (7073)
 ```
 
-Docker: `docker compose up -d --build` (add `--profile local-db` for a throwaway Postgres;
-then set `DBXF_DATABASE_URL=postgresql+psycopg://premig:premig@db:5432/premig` in `.env`).
+Docker: `docker compose up -d --build`. The container reads `.env` and applies the Alembic
+migrations on start-up (`DBXF_DB_AUTO_MIGRATE=true`), then serves on 7073.
 Interactive docs: `http://localhost:7073/docs`.
 
 | Setting | Default | |
@@ -22,7 +25,10 @@ Interactive docs: `http://localhost:7073/docs`.
 | `DBXF_API_PORT` / `DBXF_API_HOST` | 7073 / 127.0.0.1 | listening address |
 | `DBXF_API_KEY` | off | when set, every `/v1` call needs header `X-API-Key` |
 | `DBXF_DATABASE_URL` | off | Postgres; when set, runs persist by default |
-| `DBXF_DB_SCHEMA` | `databricks_to_fabric_premigration` | |
+| `DBXF_DB_SCHEMA` | `databricks_to_fabric_premigration` | schema of the tables |
+| `DBXF_DB_TABLE_PREFIX` | empty | e.g. `dbx_` when the schema is shared with another accelerator |
+| `DBXF_DB_SSLMODE` | `require` (remote) / `prefer` (localhost) | Azure needs TLS |
+| `DBXF_DB_AUTO_MIGRATE` | false (true in docker-compose) | run the migrations when the API starts |
 | `DBXF_ASSESSMENT_RULES` | bundled | rules file used by every run |
 | `DBXF_API_RUN_TTL_S` | 86400 | finished runs (and their workbooks) expire → 410 |
 | `DBXF_MAX_UPLOAD_BYTES` | 100 MB | upload cap, enforced while streaming |

@@ -24,6 +24,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        if settings.database_url is not None and settings.db_auto_migrate:
+            from dbx_premig.db.engine import migrate
+
+            migrate(settings)  # fail fast: the API does not start on a database it cannot use
         yield
         pool.shutdown(wait=False, cancel_futures=True)
 

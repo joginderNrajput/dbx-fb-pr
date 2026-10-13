@@ -16,7 +16,7 @@ Full reference (fields, statuses, settings): [API.md](API.md).
 pip install -e ".[api,postgres]"
 python discovery.py serve --host 0.0.0.0          # without Docker
 # or
-docker compose up -d --build                       # with Docker (add --profile local-db for Postgres)
+docker compose up -d --build                       # with Docker (database: Azure Postgres from .env)
 ```
 
 **Replace these placeholders** in the requests:

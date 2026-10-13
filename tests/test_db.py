@@ -7,17 +7,49 @@ import sqlalchemy as sa
 from pydantic import SecretStr
 
 from dbx_premig.config import Settings, load_settings
-from dbx_premig.db.engine import ddl_sql, describe_target, get_engine
+from dbx_premig.db.engine import (
+    MIGRATED_TABLES,
+    ddl_sql,
+    describe_target,
+    get_engine,
+    migrate,
+    sslmode_for,
+)
 from dbx_premig.db.persist import persist_assessment
 from dbx_premig.errors import ConfigError, DatabaseError
 from dbx_premig.service import run_analysis
 from tests.conftest import SNAPSHOT
 
-MIGRATION = Path(__file__).parent.parent / "dbx_premig" / "db" / "migrations" / "0001_initial.sql"
+
+def test_offline_sql_creates_every_table() -> None:
+    sql = ddl_sql(load_settings())
+    for table in MIGRATED_TABLES:
+        assert f"CREATE TABLE databricks_to_fabric_premigration.{table} (" in sql
+    assert "databricks_to_fabric_premigration.dbx_premig_alembic_version" in sql
+    prefixed = ddl_sql(load_settings(db_schema="shared", db_table_prefix="dbx_"))
+    assert "CREATE TABLE shared.dbx_totals (" in prefixed
+    assert "shared.dbx_alembic_version" in prefixed and "shared.totals (" not in prefixed
 
 
-def test_migration_file_matches_schema() -> None:
-    assert MIGRATION.read_text() == ddl_sql("databricks_to_fabric_premigration")
+@pytest.mark.parametrize(
+    ("url", "setting", "expected"),
+    [
+        ("postgresql+psycopg://u:p@localhost:5432/db", None, "prefer"),
+        ("postgresql+psycopg://u:p@srv.postgres.database.azure.com:5432/db", None, "require"),
+        ("postgresql://u:p@srv.postgres.database.azure.com/db?sslmode=verify-full", None, None),
+        ("postgresql+psycopg://u:p@localhost/db", "disable", "disable"),
+    ],
+)
+def test_sslmode(url: str, setting: str | None, expected: str | None) -> None:
+    s = load_settings(database_url=SecretStr(url), db_sslmode=setting)
+    assert sslmode_for(s) == expected
+
+
+def test_db_setting_validation() -> None:
+    with pytest.raises(ConfigError):
+        load_settings(db_table_prefix="Bad-Prefix")
+    with pytest.raises(ConfigError):
+        load_settings(db_sslmode="sometimes")
 
 
 def test_describe_target_hides_credentials() -> None:
@@ -82,9 +114,80 @@ def test_persist_and_replace(tmp_path: Path, pg_settings: Settings) -> None:
 
 @pytest.mark.database
 def test_db_init_is_idempotent(pg_settings: Settings) -> None:
-    from dbx_premig.db.engine import create_schema
+    assert migrate(pg_settings) == migrate(pg_settings) == "0001"
 
-    assert create_schema(pg_settings) == create_schema(pg_settings)
+
+@pytest.mark.database
+def test_migrated_database_matches_the_models(pg_settings: Settings) -> None:
+    """No drift between the Alembic revisions and db/schema.py."""
+    from alembic.autogenerate import compare_metadata
+    from alembic.migration import MigrationContext
+
+    from dbx_premig.db.schema import build_tables
+
+    engine = get_engine(pg_settings)
+    with engine.connect() as conn:
+        ctx = MigrationContext.configure(
+            conn, opts={"include_schemas": True, "include_name": lambda name, type_, _p: (
+                type_ != "schema" or name == pg_settings.db_schema)},
+        )  # fmt: skip
+        diff = compare_metadata(ctx, build_tables(pg_settings.db_schema).metadata)
+    engine.dispose()
+    diff = [d for d in diff if "alembic_version" not in str(d)]
+    assert diff == []
+
+
+@pytest.mark.database
+def test_shared_schema_guard_and_prefix(tmp_path: Path, pg_settings: Settings) -> None:
+    """A schema holding another tool's 'totals' is never touched; a prefix side-steps it."""
+    import uuid
+
+    engine = get_engine(pg_settings)
+    schema = f"s_{uuid.uuid4().hex[:8]}"
+    with engine.begin() as conn:
+        conn.execute(sa.text(f'CREATE SCHEMA "{schema}"'))
+        conn.execute(sa.text(f'CREATE TABLE "{schema}".totals (total_workflows int)'))
+        conn.execute(sa.text(f'CREATE TABLE "{schema}".alembic_version (version_num text)'))
+        conn.execute(sa.text(f"INSERT INTO \"{schema}\".alembic_version VALUES ('alteryx1')"))
+    try:
+        shared = pg_settings.model_copy(update={"db_schema": schema})
+        with pytest.raises(DatabaseError, match="did not create"):
+            migrate(shared)
+        prefixed = shared.model_copy(update={"db_table_prefix": "dbx_"})
+        assert migrate(prefixed) == "0001"
+        run = run_analysis(prefixed, input_path=SNAPSHOT, output_dir=tmp_path)
+        out = persist_assessment(run.result, prefixed, organization_id="o", job_id="j")
+        assert out.rows["estimation"] == 41
+        with engine.connect() as conn:
+            names = {r[0] for r in conn.execute(sa.text(
+                "select table_name from information_schema.tables where table_schema = :s"),
+                {"s": schema})}  # fmt: skip
+            other = conn.execute(sa.text(f'select * from "{schema}".alembic_version')).all()
+        assert {f"dbx_{t}" for t in MIGRATED_TABLES} <= names and "totals" in names
+        assert other == [("alteryx1",)]  # the other tool's migration state is untouched
+    finally:
+        with engine.begin() as conn:
+            conn.execute(sa.text(f'DROP SCHEMA "{schema}" CASCADE'))
+        engine.dispose()
+
+
+@pytest.mark.database
+def test_downgrade_removes_the_tables(pg_settings: Settings) -> None:
+    from alembic import command
+
+    from dbx_premig.db.engine import _alembic_config, current_revision
+
+    engine = get_engine(pg_settings)
+    with engine.connect() as conn:
+        cfg = _alembic_config(pg_settings)
+        cfg.attributes["connection"] = conn
+        command.downgrade(cfg, "base")
+        conn.commit()
+        left = set(sa.inspect(conn).get_table_names(schema=pg_settings.db_schema))
+    engine.dispose()
+    assert not left & set(MIGRATED_TABLES)
+    assert current_revision(pg_settings) is None
+    assert migrate(pg_settings) == "0001"
 
 
 @pytest.mark.database

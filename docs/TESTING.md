@@ -137,12 +137,14 @@ file. Break a formula on purpose (`lnes / 10`): `rules-check` exits 5 naming the
 
 **Database**:
 
+The database settings come from `.env` (Azure Database for PostgreSQL; see `.env.example`).
+
 ```bash
-export DBXF_DATABASE_URL=postgresql+psycopg://user:pw@localhost:5432/premig
-python discovery.py db-init                       # creates schema + 5 tables (idempotent)
+python discovery.py db-init                       # Alembic: creates / upgrades the 5 tables
 python discovery.py analyze --input tests/fixtures/mini/snapshot.json --out output \
     --persist --org org-1 --job job-1             # "Saved to … as scan N (totals 1, inventory 41, …)"
-psql "$DBXF_DATABASE_URL" -c "select * from databricks_to_fabric_premigration.computation"
+# then, in any SQL client on the same database (with DBXF_DB_TABLE_PREFIX=dbx_):
+#   select * from <DBXF_DB_SCHEMA>.dbx_computation;
 ```
 
 Run the same command again: the summary says *replaced the previous run* and the tables
@@ -301,5 +303,5 @@ asked for it, the snapshot JSON).
 | Excel shows 0 everywhere | the file was opened in a viewer that does not recalculate; open in Excel or LibreOffice |
 | exit 5 on `assess` | the rules file is invalid: `rules-check --rules <file>` names the key |
 | exit 8 on `assess` | the input is not a discovery workbook written by this tool |
-| exit 9 | database unreachable / tables missing: check `DBXF_DATABASE_URL`, run `db-init` |
+| exit 9 | database unreachable (URL, Azure firewall rule for your IP, TLS) or tables missing: check `.env`, run `db-init`; *did not create* = shared schema, set `DBXF_DB_TABLE_PREFIX` |
 | exit 1, *Internal error* | a bug: re-run with `-v` and report the class name and traceback (no client data is printed) |
